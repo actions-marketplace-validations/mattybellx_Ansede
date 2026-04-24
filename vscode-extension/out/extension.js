@@ -75,6 +75,12 @@ function diagnosticRange(document, finding) {
     const line = document.lineAt(safeLine);
     return new vscode.Range(safeLine, line.firstNonWhitespaceCharacterIndex, safeLine, line.range.end.character);
 }
+class AnsedeDiagnostic extends vscode.Diagnostic {
+    constructor(range, message, severity, finding) {
+        super(range, message, severity);
+        this.finding = finding;
+    }
+}
 function parseErrorDiagnostic(message) {
     const range = new vscode.Range(new vscode.Position(0, 0), new vscode.Position(0, 0));
     const diagnostic = new vscode.Diagnostic(range, message, vscode.DiagnosticSeverity.Warning);
@@ -109,7 +115,7 @@ function pushFindingDiagnostics(document, result, minOrder, diagnostics) {
         if (typeof finding.confidence === 'number') {
             parts.push(`Confidence: ${finding.confidence.toFixed(2)}`);
         }
-        const diagnostic = new vscode.Diagnostic(diagnosticRange(document, finding), parts.join('\n\n'), toDiagnosticSeverity(finding.severity));
+        const diagnostic = new AnsedeDiagnostic(diagnosticRange(document, finding), parts.join('\n\n'), toDiagnosticSeverity(finding.severity), finding);
         diagnostic.source = 'ansede-static';
         const codeValue = finding.rule_id ?? finding.cwe;
         if (codeValue) {
@@ -171,6 +177,42 @@ async function scanDocument(document, collection, statusItem) {
         statusItem.show();
     }
 }
+class AnsedeCodeActionProvider {
+    provideCodeActions(document, range, context, token) {
+        const actions = [];
+        for (const diagnostic of context.diagnostics) {
+            if (diagnostic.source === 'ansede-static' && diagnostic.finding) {
+                const finding = diagnostic.finding;
+                if (finding.auto_fix && finding.auto_fix.includes('BEFORE:') && finding.auto_fix.includes('AFTER:')) {
+                    const parts = finding.auto_fix.split("AFTER:");
+                    const afterLines = parts[1].trimEnd().split('\n');
+                    // Usually the first line is exactly what we want, following lines might be padded
+                    const after = afterLines.map(line => line.replace(/^ {8}/, '    ')).join('\n').replace(/^\n\s*/, '');
+                    const action = new vscode.CodeAction(`Ansede Fix: ${finding.suggestion || "Apply security fix"}`, vscode.CodeActionKind.QuickFix);
+                    action.diagnostics = [diagnostic];
+                    action.isPreferred = true;
+                    const edit = new vscode.WorkspaceEdit();
+                    // Simple replacement based on line
+                    if (finding.line) {
+                        const lineIdx = finding.line - 1;
+                        if (lineIdx >= 0 && lineIdx < document.lineCount) {
+                            const textLine = document.lineAt(lineIdx);
+                            const startPos = new vscode.Position(lineIdx, 0);
+                            const endPos = new vscode.Position(lineIdx, textLine.text.length);
+                            edit.replace(document.uri, new vscode.Range(startPos, endPos), after);
+                        }
+                    }
+                    else {
+                        edit.replace(document.uri, diagnostic.range, after);
+                    }
+                    action.edit = edit;
+                    actions.push(action);
+                }
+            }
+        }
+        return actions;
+    }
+}
 function activate(context) {
     const collection = vscode.languages.createDiagnosticCollection('ansede');
     const statusItem = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Left, 100);
@@ -180,7 +222,7 @@ function activate(context) {
     if (vscode.window.activeTextEditor) {
         void scan(vscode.window.activeTextEditor.document);
     }
-    context.subscriptions.push(collection, statusItem, vscode.workspace.onDidOpenTextDocument(document => {
+    context.subscriptions.push(collection, statusItem, vscode.languages.registerCodeActionsProvider([{ scheme: 'file', language: 'python' }, { scheme: 'file', language: 'javascript' }], new AnsedeCodeActionProvider(), { providedCodeActionKinds: [vscode.CodeActionKind.QuickFix] }), vscode.workspace.onDidOpenTextDocument(document => {
         void scan(document);
     }), vscode.workspace.onDidSaveTextDocument(document => {
         if (vscode.workspace.getConfiguration('ansede').get('scanOnSave', true)) {

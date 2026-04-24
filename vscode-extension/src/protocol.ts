@@ -10,6 +10,7 @@ export interface AnsedeFinding {
     confidence?: number;
     analysis_kind?: string;
     auto_fix?: string;
+    explanation?: string;
 }
 
 export interface AnsedeFileSummary {

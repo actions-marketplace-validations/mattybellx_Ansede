@@ -89,6 +89,7 @@ class Finding:
             "agent": self.agent,
             "confidence": self.confidence,
             "auto_fix": self.auto_fix,
+            "explanation": self.explanation,
             "analysis_kind": self.analysis_kind,
             "trace": [frame.as_dict() for frame in self.trace],
         }
