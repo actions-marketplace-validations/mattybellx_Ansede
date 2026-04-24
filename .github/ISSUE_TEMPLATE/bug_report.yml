@@ -1,0 +1,45 @@
+name: 🐛 Bug Report
+description: Report a false positive, false negative, crash, or unexpected behaviour
+labels: ["bug"]
+body:
+  - type: textarea
+    id: description
+    attributes:
+      label: Description
+      description: What happened? What did you expect?
+      placeholder: "ansede-static flagged a safe pattern as CWE-89..."
+    validations:
+      required: true
+  - type: textarea
+    id: code
+    attributes:
+      label: Minimal code snippet
+      description: Paste the smallest code that reproduces the issue
+      render: python
+    validations:
+      required: true
+  - type: textarea
+    id: output
+    attributes:
+      label: ansede-static output
+      description: Paste the full output (text or JSON)
+      render: text
+  - type: input
+    id: version
+    attributes:
+      label: Version
+      description: "Run `ansede-static --version`"
+      placeholder: "ansede-static 1.2.0"
+    validations:
+      required: true
+  - type: dropdown
+    id: type
+    attributes:
+      label: Issue type
+      options:
+        - False positive (flagged safe code)
+        - False negative (missed real vulnerability)
+        - Crash / error
+        - Other
+    validations:
+      required: true
