@@ -13,7 +13,7 @@ ansede-static src/
 
 [![PyPI version](https://badge.fury.io/py/ansede-static.svg)](https://pypi.org/project/ansede-static/)
 [![Python 3.9+](https://img.shields.io/badge/python-3.9+-blue.svg)](https://www.python.org/downloads/)
-[![CI](https://github.com/ansede/ansede-static/actions/workflows/ci.yml/badge.svg)](https://github.com/ansede/ansede-static/actions)
+[![CI](https://github.com/mattybellx/Ansede/actions/workflows/ci.yml/badge.svg)](https://github.com/mattybellx/Ansede/actions)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 
 ---
@@ -127,7 +127,7 @@ This is ideal for adopting ansede-static on a large codebase incrementally.
 
 ```yaml
 # .github/workflows/security.yml
-- uses: ansede/ansede-static@v1
+- uses: mattybellx/Ansede@v1
   with:
     path: src/
     fail-on: high       # optional: critical/high/medium/low/never
@@ -278,13 +278,15 @@ for r in json.load(sys.stdin)['results']:
 The `benchmarks/` directory contains 26 hand-crafted code snippets that reproduce
 vulnerability _patterns_ from real CVE entries.
 
-> **Honest note:** These are _synthetic pattern reproductions_, not tests against
-> real-world project code. 100% recall on synthetic patterns is a necessary but not
-> sufficient condition for production-grade detection.
+> **Important caveat:** These are _synthetic pattern reproductions_ written specifically
+> to match what the tool detects. Recall on hand-crafted fixtures is a baseline sanity
+> check — it validates that rules fire, not that they generalise to real codebases.
+> Real-world precision and recall on projects like OWASP WebGoat or production open-source
+> code will differ. Contributions testing against real-world CVE-affected code are welcome.
 
 ```bash
-git clone https://github.com/ansede/ansede-static
-cd ansede-static
+git clone https://github.com/mattybellx/Ansede
+cd Ansede
 pip install -e .
 python -m benchmarks.nvd_benchmark
 ```
@@ -301,10 +303,10 @@ python -m benchmarks.nvd_benchmark
   ✓  CVE-2021-32556  CWE-502  python  [1 critical — pickle deserialization]
   ✓  CVE-2019-10744  CWE-1321 js      [1 high    — prototype pollution]
 
-  Python (13 patterns):  13/13  (100% recall)
-  JS/TS  (13 patterns):  13/13  (100% recall)
+  Python (13 patterns):  13/13
+  JS/TS  (13 patterns):  13/13
 
-  Overall: 26/26  ·  100.0% recall  ·  ~43ms
+  All 26 synthetic patterns detected  ·  ~43ms
 ```
 
 ---
@@ -337,7 +339,7 @@ sarif_str = format_sarif([result])
 ```yaml
 steps:
   - uses: actions/checkout@v4
-  - uses: ansede/ansede-static@v1
+  - uses: mattybellx/Ansede@v1
     with:
       path: src/
       fail-on: high
@@ -362,7 +364,7 @@ steps:
 
 ```yaml
 repos:
-  - repo: https://github.com/ansede/ansede-static
+  - repo: https://github.com/mattybellx/Ansede
     rev: v1.1.0
     hooks:
       - id: ansede-static
@@ -374,8 +376,8 @@ repos:
 ## Development
 
 ```bash
-git clone https://github.com/ansede/ansede-static
-cd ansede-static
+git clone https://github.com/mattybellx/Ansede
+cd Ansede
 pip install -e ".[dev]"
 pytest tests/ -v
 python -m benchmarks.nvd_benchmark
@@ -390,6 +392,26 @@ ansede-static src/ --fail-on high
 - **JavaScript:** Add either a `_Rule(...)` entry or a contextual `_check_*` function in [src/ansede_static/js_analyzer.py](src/ansede_static/js_analyzer.py), then register it in `analyze_js()`
 - **Benchmark test:** Add a `CVEEntry(...)` to [benchmarks/cve_corpus.py](benchmarks/cve_corpus.py)
 - See [CONTRIBUTING.md](CONTRIBUTING.md) for the full checklist
+
+---
+
+## Source code
+
+The full implementation is in this repository under [`src/ansede_static/`](src/ansede_static/):
+
+| File | Purpose |
+|------|---------|
+| [`python_analyzer.py`](src/ansede_static/python_analyzer.py) | 27 Python detection rules (AST/dataflow) |
+| [`js_analyzer.py`](src/ansede_static/js_analyzer.py) | 23+ JavaScript/TypeScript detection rules |
+| [`js_ast_analyzer.py`](src/ansede_static/js_ast_analyzer.py) | JS AST parsing and walk helpers |
+| [`engine/triage.py`](src/ansede_static/engine/triage.py) | Confidence scoring and triage |
+| [`engine/explain.py`](src/ansede_static/engine/explain.py) | Human-readable finding explanations |
+| [`reporters.py`](src/ansede_static/reporters.py) | Text, JSON, and SARIF output formatters |
+| [`ir/global_graph.py`](src/ansede_static/ir/global_graph.py) | Inter-procedural call graph |
+| [`cache/sqlite_store.py`](src/ansede_static/cache/sqlite_store.py) | Zero-dependency result cache |
+| [`cli.py`](src/ansede_static/cli.py) | CLI entry point |
+
+Benchmark corpus: [`benchmarks/cve_corpus.py`](benchmarks/cve_corpus.py)
 
 ---
 

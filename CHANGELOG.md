@@ -35,7 +35,7 @@ Format follows [Keep a Changelog](https://keepachangelog.com/).
 - GitHub Action finding counts now parse the JSON envelope correctly.
 - VS Code extension scans now stream document contents over stdin instead of assuming child-process input wiring that never happened.
 
-## [1.1.0] — 2025-01-XX
+## [1.1.0] — 2025-01-20
 
 ### Added
 - 20 modular rule functions (`_rule_01` through `_rule_20`) replacing the monolithic `_detect()` function.
@@ -53,7 +53,7 @@ Format follows [Keep a Changelog](https://keepachangelog.com/).
 - Benchmark Unicode encoding on Windows (UTF-8 reconfigure).
 - `_ownership_re` shared-scope leak and `ctx` variable shadowing in rule functions.
 
-## [1.0.0] — 2025-01-XX
+## [1.0.0] — 2025-01-08
 
 Initial release.
 

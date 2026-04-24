@@ -405,7 +405,7 @@ def format_sarif(results: list[AnalysisResult]) -> str:
                 "driver": {
                     "name": "ansede-static",
                     "version": get_engine_version(),
-                    "informationUri": "https://github.com/ansede/ansede-static",
+                    "informationUri": "https://github.com/mattybellx/Ansede",
                     "rules": list(rules_by_id.values()),
                 }
             },

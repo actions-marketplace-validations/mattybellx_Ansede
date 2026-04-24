@@ -13,7 +13,7 @@ If you discover a security vulnerability in ansede-static, **please do not open 
 
 Instead, use **GitHub private vulnerability reporting**:
 
-- https://github.com/ansede/ansede-static/security/advisories/new
+- https://github.com/mattybellx/Ansede/security/advisories/new
 
 When reporting, please include:
 

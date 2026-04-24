@@ -33,10 +33,10 @@
   },
   "repository": {
     "type": "git",
-    "url": "https://github.com/ansede/ansede-static"
+    "url": "https://github.com/mattybellx/Ansede"
   },
   "bugs": {
-    "url": "https://github.com/ansede/ansede-static/issues"
+    "url": "https://github.com/mattybellx/Ansede/issues"
   },
   "activationEvents": [
     "onLanguage:python",

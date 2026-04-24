@@ -5,7 +5,7 @@ build-backend = "hatchling.build"
 [project]
 name = "ansede-static"
 version = "1.1.0"
-description = "A Fast, Flow-Sensitive Static Analysis engine for Python and JavaScript."
+description = "AST-based SAST for Python and JavaScript — detects IDOR, auth bypass, and ownership flaws that Bandit misses."
 readme = "README.md"
 license = "MIT"
 requires-python = ">=3.9"
@@ -39,9 +39,9 @@ dev = ["pytest>=8", "pytest-cov>=5"]
 ansede-static = "ansede_static.cli:main"
 
 [project.urls]
-Homepage   = "https://github.com/ansede/ansede-static"
-Repository = "https://github.com/ansede/ansede-static"
-Issues     = "https://github.com/ansede/ansede-static/issues"
+Homepage   = "https://github.com/mattybellx/Ansede"
+Repository = "https://github.com/mattybellx/Ansede"
+Issues     = "https://github.com/mattybellx/Ansede/issues"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/ansede_static"]
