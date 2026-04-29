@@ -218,6 +218,7 @@ class LspServer:
         Errors are caught and logged rather than propagated — the LSP loop
         must not crash when a single file fails to parse.
         """
+        diagnostics: list[dict[str, Any]] = []
         try:
             findings: list[Any] = []
             if uri.endswith(".py"):
@@ -230,12 +231,15 @@ class LspServer:
                 findings = result.findings
 
             diagnostics = _findings_to_diagnostics(findings)
+        except Exception as exc:  # noqa: BLE001
+            _logger.exception("LSP analysis error for %s: %s", uri, exc)
+        finally:
+            # Always publish so clients/tests receive a diagnostics event
+            # even when analysis fails unexpectedly.
             self._notify("textDocument/publishDiagnostics", {
                 "uri": uri,
                 "diagnostics": diagnostics,
             })
-        except Exception as exc:  # noqa: BLE001
-            _logger.exception("LSP analysis error for %s: %s", uri, exc)
 
     def _schedule_analysis(self, uri: str, content: str) -> None:
         """Debounce analysis — cancel any pending analysis for this URI first."""
