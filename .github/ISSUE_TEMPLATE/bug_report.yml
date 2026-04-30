@@ -2,6 +2,34 @@ name: 🐛 Bug Report
 description: Report a false positive, false negative, crash, or unexpected behaviour
 labels: ["bug"]
 body:
+  - type: dropdown
+    id: issue_type
+    attributes:
+      label: Issue type
+      options:
+        - False positive (flagged safe code)
+        - False negative (missed real vulnerability)
+        - Crash / exception
+        - Performance regression
+        - Other
+    validations:
+      required: true
+
+  - type: dropdown
+    id: language
+    attributes:
+      label: Language / surface area
+      options:
+        - Python analyzer
+        - JavaScript / TypeScript analyzer
+        - CLI / config
+        - Reporter (text / JSON / SARIF)
+        - VS Code extension
+        - Benchmark harness
+        - Other
+    validations:
+      required: true
+
   - type: textarea
     id: description
     attributes:
@@ -10,6 +38,17 @@ body:
       placeholder: "ansede-static flagged a safe pattern as CWE-89..."
     validations:
       required: true
+
+  - type: textarea
+    id: repro
+    attributes:
+      label: Reproduction command
+      description: Paste the exact command used (including flags)
+      placeholder: "ansede-static src/ --format json --js-backend structural"
+      render: bash
+    validations:
+      required: true
+
   - type: textarea
     id: code
     attributes:
@@ -18,12 +57,20 @@ body:
       render: python
     validations:
       required: true
+
   - type: textarea
     id: output
     attributes:
       label: ansede-static output
       description: Paste the full output (text or JSON)
       render: text
+
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected behavior
+      description: What should ansede-static report instead?
+
   - type: input
     id: version
     attributes:
@@ -32,14 +79,32 @@ body:
       placeholder: "ansede-static 1.2.0"
     validations:
       required: true
-  - type: dropdown
-    id: type
+
+  - type: input
+    id: python_version
     attributes:
-      label: Issue type
+      label: Python version
+      description: "Run `python --version`"
+      placeholder: "Python 3.11.x"
+
+  - type: dropdown
+    id: os
+    attributes:
+      label: Operating system
       options:
-        - False positive (flagged safe code)
-        - False negative (missed real vulnerability)
-        - Crash / error
+        - Windows
+        - macOS
+        - Linux
         - Other
-    validations:
-      required: true
+
+  - type: checkboxes
+    id: checklist
+    attributes:
+      label: Before submitting
+      options:
+        - label: I searched existing issues to avoid duplicates.
+          required: true
+        - label: I included a minimal reproducible snippet.
+          required: true
+        - label: I removed private secrets/tokens from pasted output.
+          required: true

@@ -2,6 +2,15 @@
 
 Thanks for considering contributing! Here's how to get started.
 
+## Quick navigation
+
+- [Development setup](#development-setup)
+- [Run validations](#run-validations)
+- [Add or update a rule](#add-or-update-a-rule)
+- [Pull request expectations](#pull-request-expectations)
+- [Code style](#code-style)
+- [Security reports](#reporting-security-issues)
+
 ## Development Setup
 
 ```bash
@@ -15,10 +24,11 @@ python -m venv .venv
 python -m pip install -e ".[dev]"
 ```
 
-## Running Tests
+## Run validations
 
 ```bash
-pytest tests/ -v
+pytest tests/ -q --tb=short
+python -m benchmarks.nvd_benchmark --fail-under 90 --quiet
 python -m benchmarks.quality_benchmark --fail-under 100
 python -m benchmarks.external_corpus --manifest benchmarks/external_manifest.json --fail-under 100
 ```
@@ -30,9 +40,9 @@ If you add or update entries in `benchmarks/real_world_manifest.json`, keep them
 to stable files or subdirectories, pin a full commit SHA, and avoid whole-repo scans that pull in
 vendored assets or framework internals unless that noise is the point of the test.
 
-All tests must pass before submitting a PR. We target **100% pass rate** on Python 3.9–3.13.
+All checks should pass before submitting a PR. CI targets Python **3.9–3.13**.
 
-## Adding a New Rule
+## Add or update a rule
 
 1. Add a `_rule_NN(ctx: _Ctx) -> list[Finding]` function in the appropriate analyzer
 2. Register it in the `_detect()` dispatcher
@@ -41,11 +51,22 @@ All tests must pass before submitting a PR. We target **100% pass rate** on Pyth
 5. Add or update a rule contract in `src/ansede_static/rules.py`
 6. Add a trust-oriented case to `benchmarks/quality_corpus.py` when the detector is user-facing
 
+When practical, include one realistic corpus fixture (or external corpus case) so regressions are caught early.
+
+## Pull request expectations
+
+- Keep PRs focused and reviewable; avoid unrelated refactors.
+- Include a short “why now” in the PR description.
+- If behavior changes, include before/after sample output.
+- Update docs when adding user-facing flags, rules, or workflow changes.
+
 ## Code Style
 
 - Zero external dependencies — stdlib only
 - Type hints on all public functions
 - No `# type: ignore` without a comment explaining why
+
+Prefer narrowly scoped fixes over broad rewrites unless the issue explicitly requires architecture changes.
 
 ## Pull Request Checklist
 

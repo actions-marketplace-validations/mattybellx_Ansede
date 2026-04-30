@@ -26,6 +26,19 @@ body:
       placeholder: "CWE-XXX"
 
   - type: dropdown
+    id: severity
+    attributes:
+      label: Expected severity
+      options:
+        - critical
+        - high
+        - medium
+        - low
+        - info
+    validations:
+      required: true
+
+  - type: dropdown
     id: language
     attributes:
       label: Language
@@ -50,3 +63,10 @@ body:
       label: Safe variant (should NOT be flagged)
       description: Optional — provide a fixed version of the snippet that the rule should not trigger on
       render: python
+
+  - type: textarea
+    id: expected_output
+    attributes:
+      label: Expected output shape
+      description: Optional — include expected CWE/rule id/title text for easier test authoring
+      placeholder: "CWE-918 + PY-008 at line X"

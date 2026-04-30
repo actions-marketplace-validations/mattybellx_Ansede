@@ -8,6 +8,12 @@
 
 <!-- Why is this change needed? Link a related issue with "Closes #123" if applicable. -->
 
+### Risk level
+
+- [ ] Low (docs / tests / non-functional)
+- [ ] Medium (detector logic or heuristics)
+- [ ] High (core engine, reporter schema, or CI-critical behavior)
+
 ### Type of change
 
 - [ ] Bug fix (non-breaking change that fixes an issue)
@@ -16,6 +22,23 @@
 - [ ] Performance improvement
 - [ ] Documentation update
 - [ ] Other (describe below)
+
+### Validation performed
+
+- [ ] `pytest tests -q --tb=short`
+- [ ] `python -m benchmarks.nvd_benchmark --fail-under 90 --quiet`
+- [ ] `python -m benchmarks.quality_benchmark --fail-under 100 --quiet`
+- [ ] `python -m benchmarks.external_corpus --manifest benchmarks/external_manifest.json --fail-under 100 --quiet`
+
+### Backward compatibility
+
+- [ ] No breaking changes
+- [ ] Breaking change (explain migration below)
+
+### Reviewer focus areas
+
+<!-- Optional: point reviewers to high-value files / concerns. -->
+- 
 
 ### Checklist
 

@@ -38,6 +38,23 @@ ansede-static src/
 - Quality benchmark: **41/41 checks (100%)**
 - Internet spot-check sample (10 real-world snippets): **10/10 hits (100%)**
 
+## Start here (2-minute tour)
+
+1. **Install and scan one folder**
+  ```bash
+  pip install "ansede-static @ git+https://github.com/mattybellx/Ansede.git"
+  ansede-static src/ --fail-on high
+  ```
+2. **Open findings in GitHub code scanning**
+  ```bash
+  ansede-static src/ --format sarif --output ansede.sarif
+  ```
+3. **Adopt incrementally with a baseline**
+  ```bash
+  ansede-static src/ --format json --output .ansede-baseline.json
+  ansede-static src/ --baseline .ansede-baseline.json --fail-on high
+  ```
+
 > **Install note:** PyPI publishing is configured for the project, but the package is not currently live there, so the install commands below use the GitHub source directly.
 
 > **If ansede-static catches a bug in your project, please ⭐ star the repo** — it helps other developers find it.

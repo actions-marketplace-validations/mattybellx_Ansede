@@ -22,6 +22,24 @@ body:
     attributes:
       label: Alternatives considered
       description: Any workarounds or other tools you've tried?
+
+  - type: textarea
+    id: impact
+    attributes:
+      label: User impact
+      description: Who is affected, and how often does this matter in real workflows?
+      placeholder: "Affects CI triage on every PR in a monorepo with ~5k files..."
+
+  - type: textarea
+    id: acceptance
+    attributes:
+      label: Acceptance criteria
+      description: What should be true when this request is complete?
+      placeholder: |
+        - [ ] New flag appears in --help
+        - [ ] Added tests for positive + negative behavior
+        - [ ] README docs updated
+
   - type: dropdown
     id: category
     attributes:
@@ -36,3 +54,11 @@ body:
         - Other
     validations:
       required: true
+
+  - type: checkboxes
+    id: checks
+    attributes:
+      label: Before submitting
+      options:
+        - label: I searched existing issues and discussions.
+          required: true
