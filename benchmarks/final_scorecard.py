@@ -2,6 +2,9 @@
 benchmarks.final_scorecard
 ──────────────────────────
 Generate a single final_scorecard.json artifact combining core benchmark metrics.
+
+Optionally accepts a web-wild harness JSON report (--web-wild-report) to embed
+real-world noise quotient measurements alongside the CVE and quality results.
 """
 from __future__ import annotations
 
@@ -20,7 +23,63 @@ def _safe_pct(value: float) -> float:
     return round(float(value), 2)
 
 
-def _target_status(*, fp_rate_pct: float, recall_pct: float, noise_per_1k_loc: float, core_cve_pass: bool) -> dict[str, Any]:
+def _parse_web_wild_report(report_path: str | Path | None) -> dict[str, Any] | None:
+    """Load and extract noise metrics from a web-wild harness JSON report."""
+    if report_path is None:
+        return None
+    path = Path(report_path)
+    if not path.exists():
+        return None
+    try:
+        payload = json.loads(path.read_text(encoding="utf-8", errors="replace"))
+    except (OSError, json.JSONDecodeError):
+        return None
+    if not isinstance(payload, dict):
+        return None
+
+    summary = payload.get("summary", {}) if isinstance(payload.get("summary"), dict) else {}
+    total_loc = int(summary.get("total_loc", 0) or 0)
+    high_critical_count = int(summary.get("high_critical_count", 0) or 0)
+
+    if total_loc > 0:
+        noise_quotient = round(high_critical_count / total_loc * 1000.0, 3)
+    else:
+        # Derive from sample-level data if summary is unavailable
+        samples = payload.get("samples", []) if isinstance(payload.get("samples"), list) else []
+        sample_loc = 0
+        sample_hc = 0
+        for sample in samples:
+            if not isinstance(sample, dict):
+                continue
+            sample_loc += int(sample.get("loc", 0) or 0)
+            for f in (sample.get("findings") or []):
+                if isinstance(f, dict) and str(f.get("severity", "")).lower() in ("high", "critical"):
+                    sample_hc += 1
+        noise_quotient = round(sample_hc / sample_loc * 1000.0, 3) if sample_loc else 0.0
+        total_loc = sample_loc
+        high_critical_count = sample_hc
+
+    fp_rate_pct = _safe_pct(float(summary.get("fp_rate", 0.0) or 0.0))
+    recall_pct = _safe_pct(float(summary.get("recall", 0.0) or 0.0))
+
+    return {
+        "noise_quotient_per_1k_loc": noise_quotient,
+        "total_loc": total_loc,
+        "high_critical_findings": high_critical_count,
+        "fp_rate_pct": fp_rate_pct,
+        "recall_pct": recall_pct,
+        "n_files": int(summary.get("n_files", 0) or 0),
+        "report_path": str(report_path),
+    }
+
+
+def _target_status(
+    *,
+    fp_rate_pct: float,
+    recall_pct: float,
+    noise_per_1k_loc: float,
+    core_cve_pass: bool,
+) -> dict[str, Any]:
     return {
         "targets": {
             "fp_rate_below_10_pct": fp_rate_pct < 10.0,
@@ -40,6 +99,7 @@ def _target_status(*, fp_rate_pct: float, recall_pct: float, noise_per_1k_loc: f
 def generate_final_scorecard(
     *,
     external_manifest: str | Path = "benchmarks/external_manifest.json",
+    web_wild_report: str | Path | None = None,
 ) -> dict[str, Any]:
     cve_report = run_cve_recall(quiet=True)
     quality_report = run_quality_benchmark(quiet=True)
@@ -51,11 +111,16 @@ def generate_final_scorecard(
 
     total_cve_loc = sum(len(entry.snippet.splitlines()) for entry in CVE_CORPUS)
     cve_fp = int(cve_summary.get("fp", 0) or 0)
-    noise_per_1k_loc = round((cve_fp / total_cve_loc) * 1000.0, 3) if total_cve_loc else 0.0
+    cve_noise_per_1k_loc = round((cve_fp / total_cve_loc) * 1000.0, 3) if total_cve_loc else 0.0
 
     recall_pct = _safe_pct(cve_summary.get("recall", 0.0) or 0.0)
     fp_rate_pct = _safe_pct(cve_summary.get("fp_rate", 0.0) or 0.0)
     core_cve_pass = bool(cve_summary.get("passed_cases", 0) == cve_summary.get("total_cases", 0))
+
+    wild_metrics = _parse_web_wild_report(web_wild_report)
+    # Primary noise quotient: use web-wild real-world corpus if available,
+    # otherwise fall back to the CVE-corpus-derived metric.
+    noise_per_1k_loc = wild_metrics["noise_quotient_per_1k_loc"] if wild_metrics else cve_noise_per_1k_loc
 
     payload: dict[str, Any] = {
         "kind": "ansede-final-scorecard",
@@ -85,9 +150,11 @@ def generate_final_scorecard(
             "noise_quotient": {
                 "unit": "fp_per_1k_loc",
                 "value": noise_per_1k_loc,
-                "baseline": "CVE corpus total LOC",
-                "total_loc": total_cve_loc,
+                "baseline": "web_wild" if wild_metrics else "CVE corpus total LOC",
+                "total_loc": wild_metrics["total_loc"] if wild_metrics else total_cve_loc,
+                "cve_corpus_noise_per_1k_loc": cve_noise_per_1k_loc,
             },
+            **({"web_wild": wild_metrics} if wild_metrics else {}),
         },
     }
 
@@ -111,14 +178,24 @@ def main() -> None:
         help="External corpus manifest path",
     )
     parser.add_argument(
+        "--web-wild-report",
+        type=Path,
+        default=None,
+        metavar="JSON",
+        help="Path to a web-wild harness JSON report; embeds real-world noise quotient.",
+    )
+    parser.add_argument(
         "--output",
         type=Path,
-        default=Path("final_scorecard.json"),
-        help="Output JSON artifact path",
+        default=Path("final_product_scorecard.json"),
+        help="Output JSON artifact path (default: final_product_scorecard.json)",
     )
     args = parser.parse_args()
 
-    scorecard = generate_final_scorecard(external_manifest=args.external_manifest)
+    scorecard = generate_final_scorecard(
+        external_manifest=args.external_manifest,
+        web_wild_report=args.web_wild_report,
+    )
     args.output.write_text(json.dumps(scorecard, indent=2), encoding="utf-8")
     print(f"final scorecard written to {args.output}")
 
