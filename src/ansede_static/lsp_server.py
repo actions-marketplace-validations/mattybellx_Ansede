@@ -146,6 +146,10 @@ class _Debouncer:
         self._lock = threading.Lock()
 
     def schedule(self, func: Any, *args: Any, **kwargs: Any) -> None:
+        if self._delay == 0.0:
+            # Zero-delay: run synchronously so callers (tests) see results immediately.
+            func(*args, **kwargs)
+            return
         with self._lock:
             if self._timer is not None:
                 self._timer.cancel()
