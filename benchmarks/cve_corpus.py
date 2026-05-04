@@ -816,4 +816,318 @@ async def list_all_users():
 """,
         expected_hit=r"CWE-862|[Mm]issing auth|admin",
     ),
+
+    # ── Expanded corpus: LDAP, NoSQL, XXE Python, CSRF, JWT, TLS, Go ──
+
+    CVEEntry(
+        cve_id="CVE-2021-LDAP-INJECTION",
+        language="python",
+        cwe="CWE-90",
+        description="LDAP injection via user-supplied filter string.",
+        snippet="""
+import ldap
+from flask import Flask, request
+
+app = Flask(__name__)
+
+@app.route('/search')
+def ldap_search():
+    username = request.args.get('user')
+    conn = ldap.initialize('ldap://localhost')
+    result = conn.search_s('ou=users,dc=example,dc=com', ldap.SCOPE_SUBTREE, f'(uid={username})')
+    return str(result)
+""",
+        expected_hit=r"CWE-90|LDAP|[Ii]njection",
+    ),
+
+    CVEEntry(
+        cve_id="CVE-2022-NOSQL-INJECTION",
+        language="python",
+        cwe="CWE-943",
+        description="NoSQL injection via unvalidated JSON filter in MongoDB query.",
+        snippet="""
+from flask import Flask, request
+import pymongo
+
+app = Flask(__name__)
+client = pymongo.MongoClient()
+db = client['users']
+
+@app.route('/find')
+def find_user():
+    username = request.args.get('user')
+    result = db.users.find({'$where': f'this.username == "{username}"'})
+    return str(list(result))
+""",
+        expected_hit=r"CWE-943|NoSQL|[Ii]njection|MongoDB",
+    ),
+
+    CVEEntry(
+        cve_id="CVE-2022-XXE-PYTHON",
+        language="python",
+        cwe="CWE-611",
+        description="XXE via lxml etree.parse with user-supplied XML.",
+        snippet="""
+from lxml import etree
+from flask import Flask, request
+
+app = Flask(__name__)
+
+@app.route('/parse-xml', methods=['POST'])
+def parse_xml():
+    xml_data = request.get_data(as_text=True)
+    tree = etree.fromstring(xml_data)
+    return etree.tostring(tree)
+""",
+        expected_hit=r"CWE-611|XXE|etree",
+    ),
+
+    CVEEntry(
+        cve_id="CVE-2022-CSRF-TOKEN",
+        language="python",
+        cwe="CWE-352",
+        description="CSRF — state-changing POST route without CSRF token validation.",
+        snippet="""
+from flask import Flask, request
+
+app = Flask(__name__)
+
+@app.route('/transfer', methods=['POST'])
+def transfer_funds():
+    amount = request.form.get('amount')
+    to_account = request.form.get('to')
+    execute_transfer(to_account, amount)
+    return {'status': 'ok'}
+""",
+        expected_hit=r"CWE-352|CSRF|state.changing",
+    ),
+
+    CVEEntry(
+        cve_id="CVE-2022-JWT-ALG-NONE",
+        language="python",
+        cwe="CWE-345",
+        description="JWT verification without specifying allowed algorithms (alg=none attack).",
+        snippet="""
+import jwt
+from flask import Flask, request
+
+app = Flask(__name__)
+
+@app.route('/verify')
+def verify_token():
+    token = request.headers.get('Authorization', '').replace('Bearer ', '')
+    try:
+        payload = jwt.decode(token, verify=False)
+        return {'user': payload.get('sub')}
+    except Exception:
+        return {'error': 'invalid'}, 401
+""",
+        expected_hit=r"CWE-345|JWT|verify.*False|alg.*none",
+    ),
+
+    CVEEntry(
+        cve_id="CVE-2022-TLS-VERIFY-FALSE",
+        language="python",
+        cwe="CWE-295",
+        description="TLS certificate verification disabled in requests call.",
+        snippet="""
+import requests
+from flask import Flask, request
+
+app = Flask(__name__)
+
+@app.route('/proxy')
+def proxy_request():
+    url = request.args.get('url')
+    resp = requests.get(url, verify=False)
+    return resp.text
+""",
+        expected_hit=r"CWE-295|TLS|verify.*False|SSL",
+    ),
+
+    CVEEntry(
+        cve_id="CVE-2022-COOKIE-SECURE-FALSE",
+        language="python",
+        cwe="CWE-614",
+        description="Session cookie set without Secure flag, allowing transmission over HTTP.",
+        snippet="""
+from flask import Flask, session
+
+app = Flask(__name__)
+app.config['SECRET_KEY'] = 'dev-key'
+
+@app.route('/login')
+def login():
+    session['user_id'] = 42
+    return {'status': 'logged_in'}
+""",
+        expected_hit=r"CWE-614|cookie.*secure|Secure.*flag",
+        severity_min="medium",
+    ),
+
+    CVEEntry(
+        cve_id="CVE-2022-GRAPHQL-INTROSPECTION",
+        language="javascript",
+        cwe="CWE-200",
+        description="GraphQL introspection enabled in production, exposing schema.",
+        snippet="""
+const { ApolloServer, gql } = require('apollo-server');
+
+const typeDefs = gql`
+  type Query { users: [User] }
+  type User { id: ID, email: String, ssn: String }
+`;
+
+const server = new ApolloServer({
+  typeDefs,
+  introspection: true,
+  playground: true,
+});
+
+server.listen(4000);
+""",
+        expected_hit=r"CWE-200|introspection|GraphQL|information.exposure",
+        severity_min="medium",
+    ),
+
+    CVEEntry(
+        cve_id="CVE-2022-DOS-BOMB",
+        language="python",
+        cwe="CWE-400",
+        description="Unbounded resource consumption — zip bomb via extracted file.",
+        snippet="""
+import zipfile
+from flask import Flask, request
+
+app = Flask(__name__)
+
+@app.route('/extract', methods=['POST'])
+def extract_archive():
+    archive = request.files.get('file')
+    with zipfile.ZipFile(archive, 'r') as zf:
+        zf.extractall('/tmp/extracted')
+    return {'status': 'ok'}
+""",
+        expected_hit=r"CWE-400|unbounded|zip.bomb|resource",
+        severity_min="medium",
+    ),
+
+    CVEEntry(
+        cve_id="CVE-2023-PY-TRACEBACK-LEAK",
+        language="python",
+        cwe="CWE-200",
+        description="Debug mode exposes full tracebacks to users in production.",
+        snippet="""
+from flask import Flask
+
+app = Flask(__name__)
+app.config['DEBUG'] = True
+
+@app.route('/crash')
+def crash():
+    raise ValueError('secret database password: SuperSecret123')
+""",
+        expected_hit=r"CWE-200|debug.*True|traceback|information.exposure",
+    ),
+
+    CVEEntry(
+        cve_id="CVE-2023-PY-UNSAFE-REFLECTION",
+        language="python",
+        cwe="CWE-470",
+        description="Unsafe use of getattr with user-controlled attribute name.",
+        snippet="""
+from flask import Flask, request
+
+app = Flask(__name__)
+
+class AdminPanel:
+    def delete_all_users(self):
+        return 'done'
+
+panel = AdminPanel()
+
+@app.route('/admin/<action>')
+def admin_action(action):
+    method = getattr(panel, action, None)
+    if method:
+        return method()
+    return {'error': 'unknown action'}
+""",
+        expected_hit=r"CWE-470|getattr|reflection|unsafe",
+    ),
+
+    CVEEntry(
+        cve_id="CVE-2023-GO-CMD-INJECTION",
+        language="go",
+        cwe="CWE-78",
+        description="Go command injection via os/exec with user-supplied arguments.",
+        snippet="""
+package main
+
+import (
+    "net/http"
+    "os/exec"
+)
+
+func executeHandler(w http.ResponseWriter, r *http.Request) {
+    cmd := r.URL.Query().Get("cmd")
+    out, _ := exec.Command("sh", "-c", cmd).Output()
+    w.Write(out)
+}
+
+func main() {
+    http.HandleFunc("/exec", executeHandler)
+    http.ListenAndServe(":8080", nil)
+}
+""",
+        expected_hit=r"CWE-78|exec\.Command|command.injection",
+    ),
+
+    CVEEntry(
+        cve_id="CVE-2023-GO-SQL-INJECTION",
+        language="go",
+        cwe="CWE-89",
+        description="Go SQL injection via fmt.Sprintf with user input.",
+        snippet="""
+package main
+
+import (
+    "database/sql"
+    "fmt"
+    "net/http"
+)
+
+var db *sql.DB
+
+func searchHandler(w http.ResponseWriter, r *http.Request) {
+    query := r.URL.Query().Get("q")
+    sqlQuery := fmt.Sprintf("SELECT * FROM users WHERE name = '%s'", query)
+    rows, _ := db.Query(sqlQuery)
+    defer rows.Close()
+}
+""",
+        expected_hit=r"CWE-89|fmt\.Sprintf|SQL.injection",
+    ),
+
+    CVEEntry(
+        cve_id="CVE-2023-GO-MISSING-AUTH",
+        language="go",
+        cwe="CWE-862",
+        description="Go admin HTTP handler without authentication middleware.",
+        snippet="""
+package main
+
+import "net/http"
+
+func adminHandler(w http.ResponseWriter, r *http.Request) {
+    w.Write([]byte(`{"users": []}`))
+}
+
+func main() {
+    http.HandleFunc("/admin/users", adminHandler)
+    http.ListenAndServe(":8080", nil)
+}
+""",
+        expected_hit=r"CWE-862|missing.auth|admin",
+    ),
 ]
