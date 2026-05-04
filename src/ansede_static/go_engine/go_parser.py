@@ -16,7 +16,7 @@ from __future__ import annotations
 import re
 from dataclasses import dataclass, field
 from enum import Enum, auto
-from typing import Dict, List, Optional, Set, Tuple
+from typing import Dict, List, Optional, Set, Tuple, Union
 
 
 # ── Tokens ────────────────────────────────────────────────────────────────
@@ -288,9 +288,10 @@ class GoFile:
     decls: Tuple["GoDecl", ...]
     filename: str = ""
 
-GoExpr = GoIdent | GoLiteral | GoCallExpr | GoSelectorExpr | GoBinaryExpr | GoUnaryExpr | GoIndexExpr | GoCompositeLit | GoFuncLit
+# Type aliases — use Union for Python 3.9 compatibility
+GoExpr = Union["GoIdent", "GoLiteral", "GoCallExpr", "GoSelectorExpr", "GoBinaryExpr", "GoUnaryExpr", "GoIndexExpr", "GoCompositeLit", "GoFuncLit"]
 GoDecl = GoFuncDecl
-GoStmt = GoAssignStmt | GoExprStmt | GoReturnStmt | GoBlockStmt | GoIfStmt | GoForStmt | GoRangeStmt | GoSwitchStmt | GoFuncDecl | GoDecl
+GoStmt = Union["GoAssignStmt", "GoExprStmt", "GoReturnStmt", "GoBlockStmt", "GoIfStmt", "GoForStmt", "GoRangeStmt", "GoSwitchStmt", "GoFuncDecl", "GoDecl"]
 
 
 # ── Recursive descent parser ──────────────────────────────────────────────
