@@ -1,0 +1,39 @@
+name: Publish to PyPI
+
+# Fires automatically when a GitHub Release is published.
+# Only triggers on release events — does NOT run on push.
+#
+# Supports:
+#   1) Trusted Publishing (recommended, no long-lived token)
+#   2) API token fallback via PYPI_API_TOKEN secret
+
+on:
+  release:
+    types: [published]
+
+permissions:
+  contents: read
+
+jobs:
+  publish:
+    name: Build and publish to PyPI
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install build tools
+        run: pip install --upgrade build twine
+
+      - name: Build distribution
+        run: python -m build
+
+      - name: Check distribution
+        run: twine check dist/*
+
+      - name: Publish to PyPI
+        uses: pypa/gh-action-pypi-publish@release/v1
