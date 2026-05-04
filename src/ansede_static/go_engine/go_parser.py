@@ -289,8 +289,8 @@ class GoFile:
     filename: str = ""
 
 GoExpr = GoIdent | GoLiteral | GoCallExpr | GoSelectorExpr | GoBinaryExpr | GoUnaryExpr | GoIndexExpr | GoCompositeLit | GoFuncLit
-GoStmt = GoAssignStmt | GoExprStmt | GoReturnStmt | GoBlockStmt | GoIfStmt | GoForStmt | GoRangeStmt | GoSwitchStmt | GoFuncDecl | GoDecl
 GoDecl = GoFuncDecl
+GoStmt = GoAssignStmt | GoExprStmt | GoReturnStmt | GoBlockStmt | GoIfStmt | GoForStmt | GoRangeStmt | GoSwitchStmt | GoFuncDecl | GoDecl
 
 
 # ── Recursive descent parser ──────────────────────────────────────────────

@@ -42,6 +42,9 @@ def _run_entry(entry: CVEEntry) -> tuple[bool, list[Finding]]:
     """Return (detected, findings) for one CVE entry."""
     if entry.language == "python":
         result = analyze_python(entry.snippet, filename=f"{entry.cve_id}.py")
+    elif entry.language == "go":
+        from ansede_static.go_engine.go_analyzer import run_go_analysis
+        result = run_go_analysis(entry.snippet, filename=f"{entry.cve_id}.go")
     else:
         result = analyze_js(entry.snippet, filename=f"{entry.cve_id}.js")
 
@@ -130,8 +133,10 @@ def run_benchmark(
     # Break down by language
     py_entries = [e for e in entries if e.language == "python"]
     js_entries = [e for e in entries if e.language == "javascript"]
+    go_entries = [e for e in entries if e.language == "go"]
     py_hits    = sum(1 for e in py_entries if e in hits)
     js_hits    = sum(1 for e in js_entries if e in hits)
+    go_hits    = sum(1 for e in go_entries if e in hits)
 
     if not quiet:
         print()
@@ -163,6 +168,7 @@ def run_benchmark(
         "elapsed_ms": elapsed * 1000,
         "python": {"total": len(py_entries), "detected": py_hits},
         "javascript": {"total": len(js_entries), "detected": js_hits},
+        "go": {"total": len(go_entries), "detected": go_hits},
         "missed": [e.cve_id for e in missed],
     }
 
@@ -183,7 +189,7 @@ def main() -> None:
               python benchmarks/nvd_benchmark.py --fail-under 80
         """),
     )
-    parser.add_argument("--lang", choices=["python", "javascript"], default=None,
+    parser.add_argument("--lang", choices=["python", "javascript", "go"], default=None,
                         help="Only benchmark a specific language")
     parser.add_argument("--verbose", "-v", action="store_true",
                         help="Show details for missed CVEs")
