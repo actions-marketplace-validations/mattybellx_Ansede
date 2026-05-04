@@ -865,6 +865,32 @@ def _analyze_file_streaming_fallback(
 
 
 def main() -> None:
+    """Entry point for ansede-static CLI.
+
+    Handles all subcommands, scan orchestration, and output formatting.
+    Gracefully handles KeyboardInterrupt for a clean user experience.
+    """
+    try:
+        _main_impl()
+    except KeyboardInterrupt:
+        _handle_graceful_shutdown()
+    except BrokenPipeError:
+        # stdout closed (e.g., `ansede-static ... | head`); no stack trace needed
+        sys.stderr.close()
+        sys.exit(0)
+
+
+def _handle_graceful_shutdown() -> None:
+    """Print a clean shutdown message and exit with code 130 (SIGINT convention)."""
+    msg = "\nansede-static: scan interrupted by user (Ctrl+C)."
+    if console:
+        console.print(f"\n[bold yellow]{msg}[/bold yellow]")
+    else:
+        print(msg, file=sys.stderr)
+    sys.exit(130)
+
+
+def _main_impl() -> None:
     parser = build_parser()
 
     # ── baseline subcommand (Phase 6 §6.2) ──────────────────────────────────
@@ -1442,4 +1468,10 @@ def main() -> None:
 
 
 if __name__ == "__main__":
-    main()
+    try:
+        main()
+    except KeyboardInterrupt:
+        _handle_graceful_shutdown()
+    except BrokenPipeError:
+        sys.stderr.close()
+        sys.exit(0)

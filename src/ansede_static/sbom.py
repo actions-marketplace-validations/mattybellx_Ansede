@@ -200,8 +200,11 @@ def _collect_components(workspace_root: Path) -> list[_Component]:
 # ──────────────────────────────────────────────────────────────────────────────
 
 def _to_cyclonedx(components: list[_Component], workspace_root: Path) -> dict[str, Any]:
-    """Produce a CycloneDX 1.4 JSON document."""
+    """Produce a CycloneDX 1.4 JSON document with NIST/OWASP compliance metadata."""
     from ansede_static.engine_version import get_engine_version
+
+    # ── Collect compliance metadata from rules catalog ─────────────────
+    cwe_list, owasp_map = _compliance_metadata()
 
     doc: dict[str, Any] = {
         "bomFormat": "CycloneDX",
@@ -221,6 +224,28 @@ def _to_cyclonedx(components: list[_Component], workspace_root: Path) -> dict[st
                 "type": "application",
                 "name": workspace_root.name or "project",
                 "version": "",
+                "properties": [
+                    {
+                        "name": "ansede:scanner_version",
+                        "value": get_engine_version(),
+                    },
+                    {
+                        "name": "ansede:cwe_count",
+                        "value": str(len(cwe_list)),
+                    },
+                    {
+                        "name": "ansede:owasp_top10_coverage",
+                        "value": f"{len(owasp_map)}/10",
+                    },
+                    {
+                        "name": "ansede:nist_reference",
+                        "value": "https://nvd.nist.gov/",
+                    },
+                    {
+                        "name": "ansede:owasp_reference",
+                        "value": "https://owasp.org/www-project-top-ten/",
+                    },
+                ],
             },
         },
         "components": [],
@@ -252,9 +277,10 @@ def _to_cyclonedx(components: list[_Component], workspace_root: Path) -> dict[st
 # ──────────────────────────────────────────────────────────────────────────────
 
 def _to_spdx(components: list[_Component], workspace_root: Path) -> dict[str, Any]:
-    """Produce an SPDX 2.3 JSON document."""
+    """Produce an SPDX 2.3 JSON document with NIST/OWASP compliance metadata."""
     from ansede_static.engine_version import get_engine_version
 
+    cwe_list, owasp_map = _compliance_metadata()
     doc_ns = f"https://ansede.dev/sbom/{uuid.uuid4()}"
     packages: list[dict[str, Any]] = []
 
@@ -342,3 +368,28 @@ def _iso_now() -> str:
     """Return current UTC time in ISO 8601 format without external deps."""
     import datetime
     return datetime.datetime.utcnow().strftime("%Y-%m-%dT%H:%M:%SZ")
+
+
+def _compliance_metadata() -> tuple[list[str], dict[str, list[str]]]:
+    """Extract CWE and OWASP Top 10 coverage from the built-in rule catalog.
+
+    Returns
+    -------
+    tuple[list[str], dict[str, list[str]]]
+        (unique_cwe_list, owasp_to_cwe_map)
+    """
+    cwe_set: set[str] = set()
+    owasp_map: dict[str, list[str]] = {}
+    try:
+        from ansede_static.rules import list_rule_contracts
+        for contract in list_rule_contracts():
+            cwe = (contract.cwe or "").strip().upper()
+            if cwe and cwe.startswith("CWE-"):
+                cwe_set.add(cwe)
+            for owasp_cat in (contract.owasp or []):
+                owasp_cat_norm = owasp_cat.strip()
+                if owasp_cat_norm and cwe:
+                    owasp_map.setdefault(owasp_cat_norm, []).append(cwe)
+    except Exception:
+        pass
+    return sorted(cwe_set), {k: sorted(set(v)) for k, v in owasp_map.items()}
