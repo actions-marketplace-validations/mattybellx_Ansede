@@ -3,6 +3,12 @@
 All notable changes to ansede-static are documented here.
 Format follows [Keep a Changelog](https://keepachangelog.com/).
 
+## [2.1.3] — 2026-05-11
+
+### Fixed — PyPI publisher identity alignment
+- **PyPI environment claim restored** — added `environment: pypi` back to `.github/workflows/publish.yml` so GitHub Actions emits the environment claim expected by the existing PyPI trusted-publisher configuration.
+- **Trusted Publishing alignment** — the workflow remains OIDC-based, but now emits claims that match the configured PyPI publisher instead of failing with `invalid-publisher`.
+
 ## [2.1.2] — 2026-05-11
 
 ### Fixed — PyPI release triggering

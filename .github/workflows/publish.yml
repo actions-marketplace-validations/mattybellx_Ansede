@@ -4,9 +4,7 @@ name: Publish to PyPI
 # This keeps publishing aligned with the tag-driven Release workflow,
 # including releases created by GitHub Actions itself.
 #
-# Supports:
-#   1) Trusted Publishing (recommended, no long-lived token)
-#   2) API token fallback via PYPI_API_TOKEN secret
+# Uses PyPI Trusted Publishing via GitHub OIDC.
 
 on:
   push:
@@ -22,6 +20,8 @@ jobs:
   publish:
     name: Build and publish to PyPI
     runs-on: ubuntu-latest
+    environment:
+      name: pypi
 
     steps:
       - uses: actions/checkout@v4
