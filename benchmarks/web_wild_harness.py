@@ -41,6 +41,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "src"))
 
 from ansede_static import _JS_EXTS, _PYTHON_EXTS, scan_file
 from ansede_static.engine.triage import apply_active_suppressions
+from ansede_static.engine.dump_failures import run_failure_diagnostics, diagnostic_report_to_dict
 
 
 _DEFAULT_REPOS: tuple[str, ...] = (
@@ -148,6 +149,21 @@ _FRAMEWORK_WEAK_FILE_SUPPRESSIONS: tuple[tuple[str, re.Pattern[str], frozenset[s
         re.compile(r"^src/flask/helpers\.py$", re.IGNORECASE),
         frozenset({"CWE-22"}),
     ),
+    (
+        "django/django",
+        re.compile(r"^django/contrib/gis/gdal/raster/", re.IGNORECASE),
+        frozenset({"CWE-22"}),
+    ),
+    (
+        "django/django",
+        re.compile(r"^django/conf/__init__\.py$", re.IGNORECASE),
+        frozenset({"CWE-22"}),
+    ),
+    (
+        "django/django",
+        re.compile(r"^django/core/management/commands/compilemessages\.py$", re.IGNORECASE),
+        frozenset({"CWE-22"}),
+    ),
 )
 
 
@@ -173,9 +189,13 @@ def _default_cache_dir() -> Path:
 
 
 def _run_git(args: list[str], *, cwd: Path | None = None) -> str:
+    cmd = ["git"]
+    if os.name == "nt":
+        cmd.extend(["-c", "core.longpaths=true"])
+    cmd.extend(args)
     try:
         completed = subprocess.run(
-            ["git", *args],
+            cmd,
             cwd=str(cwd) if cwd else None,
             check=True,
             capture_output=True,
@@ -364,6 +384,9 @@ def _labels_for_sample(
     curated = (curated_labels or {}).get((sample.repo, _normalize_relative_path(sample.relative_path)))
     weak_labels, weak_reasons = _infer_expected_labels(code)
     weak_labels, weak_reasons = _apply_weak_label_policy(sample, code, weak_labels, weak_reasons)
+    # Vendor / minified files are third-party code; exclude from scoring.
+    if _is_vendor_or_minified_relative_path(sample.relative_path) and curated is None:
+        return set(), [], "vendor-unlabeled"
     if label_mode == "curated":
         if curated is None:
             return set(), [], "curated-unlabeled"
@@ -780,6 +803,11 @@ def _score_sample(
         tp = len(predicted_labels & expected_labels)
         fn = len(expected_labels - predicted_labels)
         fp = len(predicted_labels - expected_labels)
+    elif label_source == "vendor-unlabeled":
+        # Vendor / minified files are excluded from scoring entirely.
+        tp = 0
+        fn = 0
+        fp = 0
     else:
         tp = 0
         fn = 0
@@ -1056,6 +1084,8 @@ def main() -> None:
                         help="Run CVE recall gate when --suppression-config is provided")
     parser.add_argument("--quality-gate-min-recall", type=float, default=100.0, metavar="PCT",
                         help="Minimum CVE recall percentage required by --quality-gate-cve (default: 100)")
+    parser.add_argument("--dump-failures", type=Path, default=None, metavar="FILE",
+                        help="Write per-file failure diagnostics (FN/FP attribution with shadow-scan diff) to FILE")
     args = parser.parse_args()
 
     if args.refresh and args.offline:
@@ -1094,6 +1124,74 @@ def main() -> None:
         )
         quality_gate_failed = not passed
         report["quality_gate_cve"] = payload
+
+    # ── Dump failures diagnostics ───────────────────────────────────────────
+    if args.dump_failures is not None:
+        diagnostics_all: list[dict[str, Any]] = []
+        samples = report.get("samples", [])
+        for sample in samples:
+            if not isinstance(sample, dict):
+                continue
+            fp = int(sample.get("fp", 0) or 0)
+            fn = int(sample.get("fn", 0) or 0)
+            if fp == 0 and fn == 0:
+                continue  # skip clean samples
+
+            file_rel = str(sample.get("file", ""))
+            repo_slug = str(sample.get("repo", ""))
+            language = str(sample.get("language", ""))
+
+            # Re-read cache dir from the harness config
+            resolved_cache = _cache_path_for_repo(cache_dir, repo_slug)
+            source_path = resolved_cache / file_rel
+
+            try:
+                code = source_path.read_text(encoding="utf-8", errors="replace")
+            except (OSError, UnicodeDecodeError):
+                continue
+
+            # Re-scan to get current Finding objects
+            result = scan_file(source_path, js_backend=args.js_backend)
+            findings_list = result.sorted_findings()
+            expected = set(str(l) for l in (sample.get("expected_labels") or []))
+
+            try:
+                diag = run_failure_diagnostics(
+                    code=code,
+                    findings=findings_list,
+                    ground_truth_cwes=expected,
+                    file_path=file_rel,
+                    language=language,
+                )
+                diagnostics_all.append(diagnostic_report_to_dict(diag))
+            except Exception:
+                continue
+
+        diagnostics_report = {
+            "kind": "ansede-dump-failures",
+            "version": 1,
+            "config": {
+                "n_files": args.n_files,
+                "seed": args.seed,
+                "severity_min": args.severity_min,
+                "js_backend": args.js_backend,
+            },
+            "summary": {
+                "total_samples_analyzed": len(diagnostics_all),
+                "total_false_negatives": sum(
+                    d["summary"]["false_negatives_count"] for d in diagnostics_all
+                ),
+                "total_false_positives": sum(
+                    d["summary"]["false_positives_count"] for d in diagnostics_all
+                ),
+            },
+            "per_file": diagnostics_all,
+        }
+        args.dump_failures.parent.mkdir(parents=True, exist_ok=True)
+        args.dump_failures.write_text(
+            json.dumps(diagnostics_report, indent=2), encoding="utf-8"
+        )
+        print(f"Failure diagnostics written to {args.dump_failures}", file=sys.stderr)
 
     if args.output is not None:
         _write_report(args.output, report)

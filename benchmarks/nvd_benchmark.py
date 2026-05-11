@@ -46,7 +46,12 @@ def _run_entry(entry: CVEEntry) -> tuple[bool, list[Finding]]:
         "java": ".java",
         "csharp": ".cs",
     }.get(entry.language, ".txt")
-    result = scan_code(entry.snippet, language=entry.language, filename=f"{entry.cve_id}{suffix}")
+    result = scan_code(
+        entry.snippet,
+        language=entry.language,
+        filename=f"{entry.cve_id}{suffix}",
+        include_registry_rules=True,
+    )
 
     pattern = re.compile(entry.expected_hit, re.IGNORECASE)
     for finding in result.findings:

@@ -141,9 +141,13 @@ def _git_cache_key(source: ExternalCorpusSource) -> str:
 
 
 def _run_git(args: list[str], *, cwd: Path | None = None) -> str:
+    cmd = ["git"]
+    if os.name == "nt":
+        cmd.extend(["-c", "core.longpaths=true"])
+    cmd.extend(args)
     try:
         completed = subprocess.run(
-            ["git", *args],
+            cmd,
             cwd=str(cwd) if cwd else None,
             check=True,
             capture_output=True,

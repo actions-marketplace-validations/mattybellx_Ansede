@@ -1,0 +1,161 @@
+language: python
+framework: redis_py
+version: "1.0"
+description: "Redis client security rules: injection, credential exposure, and insecure data storage"
+rules:
+  - id: registry/redis/injection/eval-user
+    title: "Redis Lua injection via eval() with user script"
+    cwe: CWE-94
+    severity: critical
+    pattern_type: taint_sink
+    sinks:
+      - r.eval(user_
+      - r.eval(request.
+      - redis.eval(user_
+      - r.execute_command('EVAL', user_
+    suggestion: "Use predefined Lua scripts; never pass user-controlled strings as Lua code"
+
+  - id: registry/redis/injection/keys-pattern
+    title: "ReDoS/data exposure via KEYS with user pattern"
+    cwe: CWE-400
+    severity: high
+    pattern_type: taint_sink
+    sinks:
+      - r.keys(user_
+      - r.keys(f"
+      - r.keys(request.
+      - redis.keys(
+    suggestion: "Use SCAN instead of KEYS; never pass user data as key pattern"
+
+  - id: registry/redis/auth/no-password
+    title: "Redis connection without password authentication"
+    cwe: CWE-306
+    severity: high
+    pattern_type: regex
+    regex: "Redis\\(host=.*(?!password=)"
+    suggestion: "Set password parameter: Redis(host=host, port=6379, password=os.environ['REDIS_PASSWORD'])"
+
+  - id: registry/redis/auth/hardcoded-password
+    title: "Hardcoded Redis password in source"
+    cwe: CWE-798
+    severity: critical
+    pattern_type: regex
+    regex: "Redis\\(.*password\\s*=\\s*['\"][^'\"]{1,64}['\"]"
+    suggestion: "Load Redis password from environment variables"
+
+  - id: registry/redis/tls/no-ssl
+    title: "Redis connection without SSL/TLS"
+    cwe: CWE-319
+    severity: high
+    pattern_type: regex
+    regex: "Redis\\(.*(?!ssl=True)"
+    suggestion: "Enable SSL: Redis(host=host, ssl=True, ssl_certfile=cert, ssl_keyfile=key)"
+
+  - id: registry/redis/storage/sensitive-plaintext
+    title: "Password or token stored plaintext in Redis"
+    cwe: CWE-312
+    severity: critical
+    pattern_type: taint_sink
+    sinks:
+      - r.set('password', password
+      - r.set("password", password
+      - r.set('token', token
+      - r.set("token", token
+      - r.set('secret', secret
+    suggestion: "Hash or encrypt sensitive values before storing in Redis"
+
+  - id: registry/redis/storage/set-no-expiry
+    title: "Sensitive Redis key set without expiry (persistent)"
+    cwe: CWE-613
+    severity: medium
+    pattern_type: taint_sink
+    sinks:
+      - r.set('session',
+      - r.set("session",
+      - r.set('auth_token',
+    suggestion: "Always set expiry: r.setex('key', timedelta(hours=1), value)"
+
+  - id: registry/redis/injection/hset-user-field
+    title: "Redis hash injection via HSET with user field name"
+    cwe: CWE-20
+    severity: high
+    pattern_type: taint_sink
+    sinks:
+      - r.hset(mapping=user_
+      - r.hset(request.
+      - r.hmset(request.
+    suggestion: "Restrict allowed field names to an explicit allowlist"
+
+  - id: registry/redis/injection/lpush-user
+    title: "Redis list injection via LPUSH/RPUSH with user data"
+    cwe: CWE-20
+    severity: medium
+    pattern_type: taint_sink
+    sinks:
+      - r.lpush(request.
+      - r.rpush(request.
+      - r.lpush(user_
+    suggestion: "Validate and size-limit data before pushing to Redis lists"
+
+  - id: registry/redis/injection/publish-user
+    title: "Redis Pub/Sub injection via PUBLISH with user message"
+    cwe: CWE-20
+    severity: medium
+    pattern_type: taint_sink
+    sinks:
+      - r.publish(channel=request.
+      - r.publish(user_
+    suggestion: "Validate message content and channel name before publishing"
+
+  - id: registry/redis/deserialization/pickle-get
+    title: "Unsafe Deserialization via pickle.loads on Redis value"
+    cwe: CWE-502
+    severity: critical
+    pattern_type: taint_sink
+    sinks:
+      - pickle.loads(r.get(
+      - pickle.loads(redis.get(
+      - pickle.loads(cache.get(
+    suggestion: "Use JSON serialization instead of pickle for Redis-stored objects"
+
+  - id: registry/redis/injection/command-user
+    title: "Redis arbitrary command via execute_command with user data"
+    cwe: CWE-78
+    severity: critical
+    pattern_type: taint_sink
+    sinks:
+      - r.execute_command(user_
+      - r.execute_command(request.
+      - redis.execute_command(f"
+    suggestion: "Never pass user data as a Redis command; use structured client methods"
+
+  - id: registry/redis/auth/url-credentials
+    title: "Redis URL with hardcoded credentials"
+    cwe: CWE-798
+    severity: critical
+    pattern_type: regex
+    regex: "Redis\\.from_url\\(['\"]redis://[^:]+:[^@]+@"
+    suggestion: "Load Redis URL from environment variables"
+
+  - id: registry/redis/storage/pii-storage
+    title: "PII stored unencrypted in Redis"
+    cwe: CWE-312
+    severity: high
+    pattern_type: taint_sink
+    sinks:
+      - r.set('email', email
+      - r.set('phone', phone
+      - r.set('ssn',
+      - r.set('credit_card',
+    suggestion: "Encrypt or tokenize PII before storing in Redis"
+
+  - id: registry/redis/injection/scan-user-pattern
+    title: "Redis SCAN with user-controlled match pattern"
+    cwe: CWE-400
+    severity: medium
+    pattern_type: taint_sink
+    sinks:
+      - r.scan(match=user_
+      - r.scan(match=request.
+      - r.hscan(match=user_
+    suggestion: "Restrict match patterns; never use user data directly as SCAN match"

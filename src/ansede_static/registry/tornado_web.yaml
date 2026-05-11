@@ -1,0 +1,141 @@
+language: python
+framework: tornado_web
+version: "1.0"
+description: "Tornado web framework security rules"
+rules:
+  - id: registry/tornado/xss/write-user
+    title: "XSS via self.write() with unescaped user data"
+    cwe: CWE-79
+    severity: critical
+    pattern_type: taint_sink
+    sinks:
+      - self.write(self.get_argument(
+      - self.write(self.request.body
+      - self.write(user_
+    suggestion: "Use tornado.escape.xhtml_escape() before writing user data"
+
+  - id: registry/tornado/sqli/raw-execute
+    title: "SQL Injection via database execute in Tornado handler"
+    cwe: CWE-89
+    severity: critical
+    pattern_type: taint_sink
+    sinks:
+      - await db.execute(f"
+      - cursor.execute(f"
+      - connection.execute(f"
+    suggestion: "Use parameterized queries with positional or named placeholders"
+
+  - id: registry/tornado/redirect/open-redirect
+    title: "Open Redirect via self.redirect with user URL"
+    cwe: CWE-601
+    severity: high
+    pattern_type: taint_sink
+    sinks:
+      - self.redirect(self.get_argument(
+      - self.redirect(user_
+    suggestion: "Validate redirect URLs against an allowlist"
+
+  - id: registry/tornado/cmd/subprocess
+    title: "Command Injection in Tornado handler"
+    cwe: CWE-78
+    severity: critical
+    pattern_type: taint_sink
+    sinks:
+      - subprocess.Popen(self.get_argument(
+      - os.system(self.get_argument(
+      - await asyncio.create_subprocess_shell(self.get_argument(
+    suggestion: "Use asyncio.create_subprocess_exec with a list of arguments"
+
+  - id: registry/tornado/path/file-traversal
+    title: "Path Traversal via StaticFileHandler with user path"
+    cwe: CWE-22
+    severity: critical
+    pattern_type: taint_sink
+    sinks:
+      - tornado.web.StaticFileHandler
+    suggestion: "Set default_filename and restrict the static directory; validate path components"
+
+  - id: registry/tornado/auth/xsrf-disabled
+    title: "XSRF protection disabled on Tornado application"
+    cwe: CWE-352
+    severity: high
+    pattern_type: regex
+    regex: "xsrf_cookies\\s*:\\s*False"
+    suggestion: "Enable XSRF cookies: settings={'xsrf_cookies': True}"
+
+  - id: registry/tornado/auth/cookie-secret-hardcoded
+    title: "Tornado cookie_secret hardcoded"
+    cwe: CWE-798
+    severity: critical
+    pattern_type: regex
+    regex: "cookie_secret\\s*:\\s*['\"][^'\"]{1,32}['\"]"
+    suggestion: "Load cookie_secret from os.environ; use a cryptographically random value"
+
+  - id: registry/tornado/deserialization/pickle-handler
+    title: "Unsafe Deserialization in Tornado handler"
+    cwe: CWE-502
+    severity: critical
+    pattern_type: taint_sink
+    sinks:
+      - pickle.loads(self.request.body
+      - pickle.loads(self.get_argument(
+    suggestion: "Use JSON with schema validation instead of pickle"
+
+  - id: registry/tornado/ssrf/httpclient-user-url
+    title: "SSRF via AsyncHTTPClient with user-controlled URL"
+    cwe: CWE-918
+    severity: high
+    pattern_type: taint_sink
+    sinks:
+      - await http_client.fetch(self.get_argument(
+      - await AsyncHTTPClient().fetch(user_
+    suggestion: "Validate URLs against an allowlist before making outbound requests"
+
+  - id: registry/tornado/tls/httpclient-no-validate
+    title: "TLS validation disabled in Tornado HTTPClient"
+    cwe: CWE-295
+    severity: high
+    pattern_type: taint_sink
+    sinks:
+      - validate_cert=False
+      - HTTPRequest(url, validate_cert=False
+    suggestion: "Keep validate_cert=True (default)"
+
+  - id: registry/tornado/upload/unrestricted
+    title: "Unrestricted file upload in Tornado handler"
+    cwe: CWE-434
+    severity: high
+    pattern_type: taint_sink
+    sinks:
+      - self.request.files[
+      - self.request.files.get(
+    suggestion: "Validate content_type and filename extension before saving uploads"
+
+  - id: registry/tornado/template/render-string-user
+    title: "SSTI via tornado.template.Template with user string"
+    cwe: CWE-94
+    severity: critical
+    pattern_type: taint_sink
+    sinks:
+      - template.Template(user_
+      - template.Template(self.get_argument(
+    suggestion: "Use static template files; never compile user-controlled strings as templates"
+
+  - id: registry/tornado/session/signed-cookie-user
+    title: "Signed cookie value used without type validation"
+    cwe: CWE-20
+    severity: medium
+    pattern_type: taint_sink
+    sinks:
+      - self.get_secure_cookie(
+    suggestion: "Validate and type-cast get_secure_cookie() values before use"
+
+  - id: registry/tornado/log/sensitive-in-handler
+    title: "Sensitive request data logged in Tornado handler"
+    cwe: CWE-532
+    severity: medium
+    pattern_type: taint_sink
+    sinks:
+      - logging.info(self.request.body
+      - logging.debug(self.request.body
+    suggestion: "Avoid logging full request bodies; mask sensitive fields"

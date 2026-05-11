@@ -163,6 +163,17 @@ def _parse_yaml_list(
                 value = ""
             items.append(value)
             continue
+        if ":" in remainder and not remainder.startswith(("'", '"', "[", "{")):
+            key, sep, value_text = remainder.partition(":")
+            if sep:
+                item_mapping: dict[str, Any] = {key.strip(): _parse_scalar(value_text.strip()) if value_text.strip() else ""}
+                index += 1
+                if index < len(lines) and lines[index][0] > line_indent:
+                    nested, index = _parse_yaml_node(lines, index, indent=lines[index][0])
+                    if isinstance(nested, dict):
+                        item_mapping.update(nested)
+                items.append(item_mapping)
+                continue
         items.append(_parse_scalar(remainder))
         index += 1
     return items, index

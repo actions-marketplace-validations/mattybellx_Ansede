@@ -59,6 +59,21 @@ def test_scan_code_accepts_js_backend_keyword():
     assert any(f.cwe == "CWE-79" for f in result.findings)
 
 
+def test_scan_code_applies_source_aware_registry_rules():
+    result = scan_code(
+        "from fastapi import APIRouter, Request\n"
+        "router = APIRouter()\n\n"
+        "@router.get('/search')\n"
+        "async def search(request: Request):\n"
+        "    await database.execute(request.query_params['q'])\n",
+        language="python",
+        filename="app.py",
+        include_registry_rules=True,
+    )
+
+    assert any(f.rule_id == "registry/fastapi/sqli/raw-sql-execute" for f in result.findings)
+
+
 # ── Rule catalog coverage metrics ────────────────────────────────────────────
 
 def test_all_known_rule_ids_have_non_empty_summary():

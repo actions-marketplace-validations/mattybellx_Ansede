@@ -1521,6 +1521,37 @@ async def list_users(current_user=Depends(get_current_user)):
 """
         assert not _has_cwe(code, "CWE-862")
 
+    def test_fastapi_route_with_annotated_depends_auth_safe(self):
+        code = """
+from typing import Annotated
+from fastapi import Depends, FastAPI
+
+app = FastAPI()
+
+def get_current_user():
+    return {'id': 1}
+
+@app.get('/admin/users')
+async def list_users(current_user: Annotated[dict, Depends(get_current_user)]):
+    return {'users': []}
+"""
+        assert not _has_cwe(code, "CWE-862")
+
+    def test_fastapi_route_with_decorator_depends_auth_safe(self):
+        code = """
+from fastapi import Depends, FastAPI
+
+app = FastAPI()
+
+def get_current_user():
+    return {'id': 1}
+
+@app.delete('/admin/users', dependencies=[Depends(get_current_user)])
+async def delete_users():
+    return {'ok': True}
+"""
+        assert not _has_cwe(code, "CWE-862")
+
     def test_fastapi_route_with_security_safe(self):
         code = """
 from fastapi import FastAPI, Security
@@ -1700,6 +1731,23 @@ async def list_users(current_user=Depends(get_current_user)):
         result = analyze_python(code)
         assert not any(f.rule_id == "PY-031" for f in result.findings)
 
+    def test_fastapi_annotated_depends_with_get_current_user_no_py031(self):
+        code = """
+from typing import Annotated
+from fastapi import Depends, FastAPI
+
+app = FastAPI()
+
+def get_current_user():
+    return {'id': 1}
+
+@app.get('/admin/users')
+async def list_users(current_user: Annotated[dict, Depends(get_current_user)]):
+    return {'users': []}
+"""
+        result = analyze_python(code)
+        assert not any(f.rule_id == "PY-031" for f in result.findings)
+
     def test_fastapi_delete_without_depends_detected(self):
         code = """
 from fastapi import FastAPI
@@ -1724,6 +1772,23 @@ def get_current_user():
 
 @app.delete('/orders/{order_id}')
 async def delete_order(order_id: int, current_user=Depends(get_current_user)):
+    return {'deleted': order_id}
+"""
+        result = analyze_python(code)
+        assert not any(f.rule_id == "PY-032" for f in result.findings)
+
+    def test_fastapi_delete_with_annotated_depends_no_py032(self):
+        code = """
+from typing import Annotated
+from fastapi import Depends, FastAPI
+
+app = FastAPI()
+
+def get_current_user():
+    return {'id': 1}
+
+@app.delete('/orders/{order_id}')
+async def delete_order(order_id: int, current_user: Annotated[dict, Depends(get_current_user)]):
     return {'deleted': order_id}
 """
         result = analyze_python(code)

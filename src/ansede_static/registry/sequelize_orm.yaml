@@ -1,0 +1,102 @@
+language: javascript
+framework: sequelize_orm
+version: "1.0"
+description: "Sequelize ORM security rules"
+rules:
+  - id: registry/sequelize/sqli/literal-where
+    title: "SQL Injection via sequelize.literal() in where clause"
+    cwe: CWE-89
+    severity: critical
+    pattern_type: taint_sink
+    sinks:
+      - Sequelize.literal(`
+      - sequelize.literal(`
+      - where: sequelize.literal(
+    suggestion: "Use Sequelize operators (Op.eq, Op.and) with proper value binding"
+
+  - id: registry/sequelize/sqli/query-raw
+    title: "SQL Injection via sequelize.query() with user string"
+    cwe: CWE-89
+    severity: critical
+    pattern_type: taint_sink
+    sinks:
+      - sequelize.query(`SELECT
+      - sequelize.query(`UPDATE
+      - sequelize.query(`INSERT
+      - sequelize.query(`DELETE
+    suggestion: "Use replacements or bind parameters: sequelize.query(sql, {replacements: {id}})"
+
+  - id: registry/sequelize/sqli/where-raw
+    title: "SQL Injection via where: {id: userInput} with raw SQL"
+    cwe: CWE-89
+    severity: high
+    pattern_type: taint_sink
+    sinks:
+      - where: { [Op.and]: [sequelize.literal(
+      - findAll({ where: { raw:
+    suggestion: "Use typed operators: { where: { id: { [Op.eq]: value } } }"
+
+  - id: registry/sequelize/idor/findbyid-no-scope
+    title: "IDOR via findByPk/findOne without ownership check"
+    cwe: CWE-639
+    severity: high
+    pattern_type: taint_sink
+    sinks:
+      - Model.findByPk(req.params.id
+      - Model.findOne({ where: { id: req.params.
+    suggestion: "Add a userId condition to findOne queries to enforce ownership"
+
+  - id: registry/sequelize/mass-assignment/create-body
+    title: "Mass Assignment via Model.create(req.body)"
+    cwe: CWE-915
+    severity: high
+    pattern_type: taint_sink
+    sinks:
+      - Model.create(req.body
+      - User.create(req.body
+    suggestion: "Pick only allowed fields: User.create({ name: req.body.name })"
+
+  - id: registry/sequelize/sqli/order-raw
+    title: "SQL Injection via order: [[col, direction]] with user data"
+    cwe: CWE-89
+    severity: high
+    pattern_type: taint_sink
+    sinks:
+      - order: [[req.query.
+      - order: [[req.body.
+    suggestion: "Validate column names and sort direction against an allowlist"
+
+  - id: registry/sequelize/sqli/findall-no-limit
+    title: "findAll without pagination limit (DoS risk)"
+    cwe: CWE-400
+    severity: medium
+    pattern_type: regex
+    regex: "\\.findAll\\(\\{(?!.*limit)"
+    suggestion: "Always specify a maximum limit: Model.findAll({ limit: 100 })"
+
+  - id: registry/sequelize/injection/fn-raw
+    title: "SQL Injection via Sequelize.fn() with user data"
+    cwe: CWE-89
+    severity: high
+    pattern_type: taint_sink
+    sinks:
+      - Sequelize.fn(req.query.
+      - sequelize.fn(req.body.
+    suggestion: "Only use trusted function names with Sequelize.fn()"
+
+  - id: registry/sequelize/auth/credentials-hardcoded
+    title: "Database credentials hardcoded in Sequelize config"
+    cwe: CWE-798
+    severity: critical
+    pattern_type: regex
+    regex: "new Sequelize\\(.*password\\s*:\\s*['\"][^'\"]{1,64}['\"]"
+    suggestion: "Load database credentials from environment variables"
+
+  - id: registry/sequelize/sqli/include-where
+    title: "SQL Injection via include.where with user-controlled values"
+    cwe: CWE-89
+    severity: high
+    pattern_type: taint_sink
+    sinks:
+      - include: [{ model:.*where: { id: req.
+    suggestion: "Use Op.eq and typed values; never pass raw user strings in include.where"

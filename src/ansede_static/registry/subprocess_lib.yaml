@@ -1,0 +1,257 @@
+language: python
+framework: subprocess_lib
+version: "1.0"
+description: "subprocess and os execution security rules: shell injection, path traversal, and unsafe APIs"
+rules:
+  - id: registry/subprocess/cmd/shell-true
+    title: "Command Injection via subprocess with shell=True"
+    cwe: CWE-78
+    severity: critical
+    pattern_type: taint_sink
+    sinks:
+      - subprocess.run(shell=True
+      - subprocess.call(shell=True
+      - subprocess.check_output(shell=True
+      - subprocess.Popen(shell=True
+      - subprocess.check_call(shell=True
+    suggestion: "Use shell=False with a list of arguments: subprocess.run(['cmd', arg])"
+
+  - id: registry/subprocess/cmd/os-system
+    title: "Command Injection via os.system()"
+    cwe: CWE-78
+    severity: critical
+    pattern_type: taint_sink
+    sinks:
+      - os.system(
+    suggestion: "Replace os.system() with subprocess.run(['cmd', arg], shell=False)"
+
+  - id: registry/subprocess/cmd/os-popen
+    title: "Command Injection via os.popen()"
+    cwe: CWE-78
+    severity: critical
+    pattern_type: taint_sink
+    sinks:
+      - os.popen(
+    suggestion: "Use subprocess.run with capture_output=True and shell=False"
+
+  - id: registry/subprocess/cmd/os-exec
+    title: "Command Injection via os.execv/execve/execl"
+    cwe: CWE-78
+    severity: critical
+    pattern_type: taint_sink
+    sinks:
+      - os.execv(
+      - os.execve(
+      - os.execl(
+      - os.execle(
+      - os.execlp(
+      - os.execvp(
+    suggestion: "Validate all arguments before calling exec functions; prefer subprocess"
+
+  - id: registry/subprocess/cmd/os-spawn
+    title: "Command Injection via os.spawnl/spawnle"
+    cwe: CWE-78
+    severity: critical
+    pattern_type: taint_sink
+    sinks:
+      - os.spawnl(
+      - os.spawnle(
+      - os.spawnlp(
+      - os.spawnv(
+      - os.spawnve(
+    suggestion: "Use subprocess.run instead of os.spawn*"
+
+  - id: registry/subprocess/cmd/commands-module
+    title: "Deprecated commands module usage"
+    cwe: CWE-78
+    severity: critical
+    pattern_type: taint_sink
+    sinks:
+      - commands.getoutput(
+      - commands.getstatusoutput(
+    suggestion: "Replace commands module with subprocess.run"
+
+  - id: registry/subprocess/cmd/shlex-no-quote
+    title: "Shell command without shlex.quote()"
+    cwe: CWE-78
+    severity: high
+    pattern_type: taint_sink
+    sinks:
+      - subprocess.run(f"
+      - subprocess.call(f"
+      - subprocess.check_output(f"
+      - subprocess.Popen(f"
+    suggestion: "Use shlex.quote() on all user-provided arguments or switch to a list"
+
+  - id: registry/subprocess/path/traversal-join
+    title: "Path Traversal via os.path.join with user data"
+    cwe: CWE-22
+    severity: critical
+    pattern_type: taint_sink
+    sinks:
+      - os.path.join(BASE_DIR,
+      - os.path.join(UPLOAD_DIR,
+      - os.path.join(root_dir,
+    suggestion: "Call os.path.abspath() and check the result starts with the expected base"
+
+  - id: registry/subprocess/path/open-traversal
+    title: "Path Traversal via open() with unsanitized user input"
+    cwe: CWE-22
+    severity: critical
+    pattern_type: taint_sink
+    sinks:
+      - open(user_
+      - open(filename
+      - open(path
+      - open(filepath
+    suggestion: "Resolve and validate path with os.path.realpath() against a safe base directory"
+
+  - id: registry/subprocess/path/pathlib-traversal
+    title: "Path Traversal via pathlib.Path with user input"
+    cwe: CWE-22
+    severity: critical
+    pattern_type: taint_sink
+    sinks:
+      - Path(user_
+      - Path(filename
+      - Path(request.
+    suggestion: "Resolve and validate: p = Path(base) / user_input; assert p.resolve().is_relative_to(base)"
+
+  - id: registry/subprocess/env/unset-env-injection
+    title: "Environment variable injection via os.environ"
+    cwe: CWE-78
+    severity: high
+    pattern_type: taint_sink
+    sinks:
+      - os.environ[user_
+      - os.environ.update(request.
+      - os.putenv(user_
+    suggestion: "Never set environment variables from user-controlled data"
+
+  - id: registry/subprocess/cmd/eval-compile
+    title: "Code Injection via eval() or exec() with user data"
+    cwe: CWE-95
+    severity: critical
+    pattern_type: taint_sink
+    sinks:
+      - eval(user_
+      - eval(input_
+      - eval(data
+      - exec(user_
+      - exec(input_
+      - compile(user_
+    suggestion: "Never pass user-controlled strings to eval/exec/compile"
+
+  - id: registry/subprocess/cmd/ctypes-call
+    title: "Code Injection via ctypes call with user data"
+    cwe: CWE-78
+    severity: critical
+    pattern_type: taint_sink
+    sinks:
+      - ctypes.CDLL(user_
+      - ctypes.cdll.LoadLibrary(user_
+    suggestion: "Only load trusted system libraries; never allow user-controlled library paths"
+
+  - id: registry/subprocess/tempfile/mktemp
+    title: "Insecure temporary file via tempfile.mktemp (TOCTOU)"
+    cwe: CWE-377
+    severity: high
+    pattern_type: taint_sink
+    sinks:
+      - tempfile.mktemp(
+    suggestion: "Use tempfile.mkstemp() or tempfile.NamedTemporaryFile() instead"
+
+  - id: registry/subprocess/cmd/shell-format
+    title: "Command Injection via string format in shell command"
+    cwe: CWE-78
+    severity: critical
+    pattern_type: regex
+    regex: "subprocess\\.(?:run|call|check_output|Popen)\\(['\"].*%[sd]"
+    suggestion: "Use a list of arguments with shell=False; never format user data into shell strings"
+
+  - id: registry/subprocess/path/glob-traversal
+    title: "Path Traversal via glob with user-controlled pattern"
+    cwe: CWE-22
+    severity: high
+    pattern_type: taint_sink
+    sinks:
+      - glob.glob(user_
+      - glob.glob(request.
+      - glob.iglob(user_
+    suggestion: "Restrict glob patterns to known safe directories"
+
+  - id: registry/subprocess/cmd/subprocess-getstatusoutput
+    title: "Command Injection via subprocess.getstatusoutput"
+    cwe: CWE-78
+    severity: critical
+    pattern_type: taint_sink
+    sinks:
+      - subprocess.getstatusoutput(
+      - subprocess.getoutput(
+    suggestion: "Use subprocess.run with shell=False and a list of arguments"
+
+  - id: registry/subprocess/cmd/paramiko-exec
+    title: "Command Injection via paramiko exec_command"
+    cwe: CWE-78
+    severity: critical
+    pattern_type: taint_sink
+    sinks:
+      - ssh.exec_command(
+      - channel.exec_command(
+    suggestion: "Validate and allowlist commands before executing via SSH"
+
+  - id: registry/subprocess/cmd/fabric-run
+    title: "Command Injection via Fabric run() or local()"
+    cwe: CWE-78
+    severity: critical
+    pattern_type: taint_sink
+    sinks:
+      - c.run(user_
+      - c.local(user_
+      - c.sudo(user_
+      - run(f"
+      - local(f"
+    suggestion: "Use shlex.quote() on arguments; avoid user data in fabric commands"
+
+  - id: registry/subprocess/path/send-file-directory
+    title: "Directory listing exposed via os.listdir"
+    cwe: CWE-200
+    severity: medium
+    pattern_type: taint_sink
+    sinks:
+      - os.listdir(user_
+      - os.listdir(request.
+      - os.scandir(user_
+    suggestion: "Restrict to a safe base directory; validate user input before listing"
+
+  - id: registry/subprocess/cmd/docker-sdk
+    title: "Command Injection via Docker SDK with user input"
+    cwe: CWE-78
+    severity: critical
+    pattern_type: taint_sink
+    sinks:
+      - client.containers.run(user_
+      - client.containers.run(image=request.
+      - container.exec_run(user_
+    suggestion: "Validate image names and commands against an allowlist before running"
+
+  - id: registry/subprocess/env/path-manipulation
+    title: "PATH environment variable manipulation"
+    cwe: CWE-427
+    severity: high
+    pattern_type: taint_sink
+    sinks:
+      - os.environ['PATH'] =
+      - os.environ["PATH"] =
+      - os.environ['PATH'] +=
+    suggestion: "Never modify PATH with user-controlled data; use absolute paths to executables"
+
+  - id: registry/subprocess/cmd/ansible-api
+    title: "Command Injection via ansible-runner with user playbook"
+    cwe: CWE-78
+    severity: critical
+    pattern_type: taint_sink
+    sinks:
+      - ansible_runner.run(playbook=user_
+      - ansible_runner.run(playbook=request.
+    suggestion: "Restrict playbook paths to a trusted directory; validate against an allowlist"

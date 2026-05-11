@@ -1,0 +1,112 @@
+language: javascript
+framework: graphql_js
+version: "1.0"
+description: "GraphQL API security rules"
+rules:
+  - id: registry/graphql/introspection/enabled-production
+    title: "GraphQL introspection enabled in production"
+    cwe: CWE-200
+    severity: high
+    pattern_type: regex
+    regex: "introspection\\s*:\\s*true"
+    suggestion: "Disable introspection in production: introspection: process.env.NODE_ENV !== 'production'"
+
+  - id: registry/graphql/injection/resolver-user
+    title: "SQL/NoSQL Injection in GraphQL resolver with user args"
+    cwe: CWE-89
+    severity: critical
+    pattern_type: taint_sink
+    sinks:
+      - db.query(`SELECT.*${args.
+      - collection.find({ $where: args.
+      - prisma.$queryRaw`SELECT.*${args.
+    suggestion: "Use parameterized queries in all GraphQL resolvers"
+
+  - id: registry/graphql/dos/no-complexity-limit
+    title: "GraphQL without query complexity limit"
+    cwe: CWE-400
+    severity: high
+    pattern_type: regex
+    regex: "new ApolloServer\\(\\{(?!.*validationRules)"
+    suggestion: "Add query complexity and depth limits using graphql-query-complexity or graphql-depth-limit"
+
+  - id: registry/graphql/dos/no-depth-limit
+    title: "GraphQL without query depth limit"
+    cwe: CWE-400
+    severity: high
+    pattern_type: regex
+    regex: "buildSchema|makeExecutableSchema(?!.*depthLimit)"
+    suggestion: "Apply depthLimit(10) or equivalent to prevent deeply nested query DoS"
+
+  - id: registry/graphql/info/field-suggestions
+    title: "GraphQL field suggestion enabled (information disclosure)"
+    cwe: CWE-200
+    severity: medium
+    pattern_type: regex
+    regex: "new ApolloServer\\(\\{(?!.*hideSchemaDetails)"
+    suggestion: "Disable field suggestions: ApolloServer({ hideSchemaDetails: true }) or custom formatError"
+
+  - id: registry/graphql/auth/resolver-no-auth
+    title: "GraphQL resolver without authentication check"
+    cwe: CWE-306
+    severity: high
+    pattern_type: regex
+    regex: "resolve:\\s*(?:async\\s*)?\\([^)]*\\)\\s*=>"
+    suggestion: "Check context.user or context.auth at the start of each resolver"
+
+  - id: registry/graphql/mutation/mass-assignment
+    title: "Mass Assignment via GraphQL mutation input spread"
+    cwe: CWE-915
+    severity: high
+    pattern_type: taint_sink
+    sinks:
+      - prisma.create({ data: args.input
+      - Model.create(args.input
+      - db.update({ data: args.
+    suggestion: "Explicitly pick allowed fields from args.input"
+
+  - id: registry/graphql/subscription/no-auth
+    title: "GraphQL subscription without authentication"
+    cwe: CWE-306
+    severity: high
+    pattern_type: regex
+    regex: "subscribe:\\s*(?:async\\s*)?\\([^)]*\\)\\s*=>"
+    suggestion: "Validate JWT or session token in the subscribe function"
+
+  - id: registry/graphql/upload/unrestricted
+    title: "Unrestricted file upload via GraphQL multipart"
+    cwe: CWE-434
+    severity: high
+    pattern_type: taint_sink
+    sinks:
+      - createUploadLink(
+      - graphqlUploadExpress(
+    suggestion: "Validate MIME type, extension, and size for all GraphQL file uploads"
+
+  - id: registry/graphql/dos/n-plus-one
+    title: "N+1 query DoS risk in GraphQL resolver"
+    cwe: CWE-400
+    severity: medium
+    pattern_type: regex
+    regex: "resolve:\\s*(?:async\\s*)?\\([^)]*parent[^)]*\\).*db\\."
+    suggestion: "Use DataLoader to batch and cache database calls in GraphQL resolvers"
+
+  - id: registry/graphql/ssrf/directive-url
+    title: "SSRF via GraphQL @export or @defer with user URL"
+    cwe: CWE-918
+    severity: high
+    pattern_type: taint_sink
+    sinks:
+      - fetch(args.url
+      - axios.get(args.url
+    suggestion: "Validate all URLs in resolver arguments against an allowlist"
+
+  - id: registry/graphql/injection/nosql-filter
+    title: "NoSQL Injection via GraphQL args passed directly to MongoDB filter"
+    cwe: CWE-943
+    severity: critical
+    pattern_type: taint_sink
+    sinks:
+      - Model.find(args.filter
+      - collection.find(args.where
+    suggestion: "Use express-mongo-sanitize; never pass GraphQL args directly to MongoDB find()"

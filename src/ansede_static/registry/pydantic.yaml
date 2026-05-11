@@ -1,0 +1,108 @@
+language: python
+framework: pydantic
+version: "1.0"
+description: "Pydantic model security rules: validation bypass, injection, and data exposure"
+rules:
+  - id: registry/pydantic/validation/construct-bypass
+    title: "Pydantic model.construct() bypasses all validation"
+    cwe: CWE-20
+    severity: high
+    pattern_type: taint_sink
+    sinks:
+      - Model.construct(
+      - model.construct(
+      - .model_construct(
+    suggestion: "Use Model(**data) instead of .construct() to run all validators"
+
+  - id: registry/pydantic/validation/parse-raw-user
+    title: "Pydantic parse_raw() with user-controlled string"
+    cwe: CWE-20
+    severity: medium
+    pattern_type: taint_sink
+    sinks:
+      - Model.parse_raw(user_
+      - Model.parse_raw(request.
+      - Model.model_validate_json(user_
+    suggestion: "Use Model.model_validate_json() with strict=True"
+
+  - id: registry/pydantic/validation/arbitrary-types
+    title: "arbitrary_types_allowed=True may accept unsafe objects"
+    cwe: CWE-20
+    severity: medium
+    pattern_type: regex
+    regex: "arbitrary_types_allowed\\s*=\\s*True"
+    suggestion: "Avoid arbitrary_types_allowed; define explicit field types"
+
+  - id: registry/pydantic/exposure/secret-field-serialized
+    title: "SecretStr or SecretBytes field serialized to plain text"
+    cwe: CWE-200
+    severity: high
+    pattern_type: taint_sink
+    sinks:
+      - .model_dump(
+      - .dict(
+    suggestion: "Use SecretStr.get_secret_value() only where needed; exclude secrets from model_dump()"
+
+  - id: registry/pydantic/validation/no-strict-mode
+    title: "Pydantic model without strict type coercion"
+    cwe: CWE-20
+    severity: low
+    pattern_type: regex
+    regex: "class.*BaseModel.*:"
+    suggestion: "Consider strict=True in Pydantic v2 or use StrictStr/StrictInt types"
+
+  - id: registry/pydantic/injection/regex-validator
+    title: "ReDoS risk in Pydantic regex field constraint"
+    cwe: CWE-400
+    severity: medium
+    pattern_type: regex
+    regex: "regex\\s*=\\s*['\"].*(?:\\*|\\+).*(?:\\*|\\+)"
+    suggestion: "Avoid nested quantifiers in regex constraints to prevent ReDoS"
+
+  - id: registry/pydantic/path/validator-traversal
+    title: "Path Traversal via Pydantic validator without normalization"
+    cwe: CWE-22
+    severity: high
+    pattern_type: taint_sink
+    sinks:
+      - @validator('filename'
+      - @field_validator('filename'
+      - @validator('path'
+    suggestion: "In path validators, call os.path.abspath() and check against BASE_DIR"
+
+  - id: registry/pydantic/exposure/response-model-all-fields
+    title: "FastAPI response_model returns all model fields including sensitive ones"
+    cwe: CWE-200
+    severity: high
+    pattern_type: regex
+    regex: "response_model\\s*=\\s*\\w+\\b(?!.*exclude)"
+    suggestion: "Create a dedicated response schema that excludes password, tokens, and internal fields"
+
+  - id: registry/pydantic/validation/extra-allow
+    title: "Pydantic model allows extra fields (mass assignment risk)"
+    cwe: CWE-915
+    severity: medium
+    pattern_type: regex
+    regex: "extra\\s*=\\s*['\"]allow['\"]|Extra\\.allow"
+    suggestion: "Use extra='ignore' or extra='forbid' to prevent unexpected field injection"
+
+  - id: registry/pydantic/deserialization/parse-obj-user
+    title: "Pydantic model instantiated from raw user dict"
+    cwe: CWE-20
+    severity: medium
+    pattern_type: taint_sink
+    sinks:
+      - Model.parse_obj(request.
+      - Model.parse_obj(user_
+      - Model.model_validate(request.
+    suggestion: "Ensure request data goes through strict type validation; use model_validate with strict=True"
+
+  - id: registry/pydantic/settings/env-secrets-exposed
+    title: "BaseSettings with sensitive env vars accessible via __fields__"
+    cwe: CWE-200
+    severity: medium
+    pattern_type: taint_sink
+    sinks:
+      - Settings().dict(
+      - Settings().model_dump(
+    suggestion: "Mark sensitive fields as SecretStr; never serialize settings directly in responses"

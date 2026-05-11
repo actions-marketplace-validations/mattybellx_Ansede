@@ -127,7 +127,7 @@ def load_sourcemap_path(filename: str) -> Path | None:
     except OSError:
         tail = ""
 
-    match = re.search(r"sourceMappingURL=([^\s*]+)", tail)
+    match = re.search(r"sourceMappingURL=([^\s*]+)", tail, re.IGNORECASE)
     if match:
         mapping_ref = match.group(1).strip()
         if mapping_ref.startswith("data:"):

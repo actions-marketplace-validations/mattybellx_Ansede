@@ -3,6 +3,7 @@ from __future__ import annotations
 from ansede_static._types import Severity
 from ansede_static.js_ast_analyzer import analyze_js_ast
 from ansede_static.python_analyzer import analyze_python
+from ansede_static.registry.sharded_loader import load_rules_for_code
 
 
 def test_js_vendor_minified_open_redirect_is_downgraded(tmp_path):
@@ -297,3 +298,52 @@ def docs_only():
     result = analyze_python(code, filename="app.py")
 
     assert all(f.rule_id != "PY-040" for f in result.findings)
+
+
+def test_lazy_sharded_loader_uses_stdlib_parser_for_yaml_pack():
+    code = "from fastapi import FastAPI\napp = FastAPI()\n"
+
+    rules = load_rules_for_code(code)
+
+    assert rules
+    assert any(
+        isinstance(rule, dict)
+        and rule.get("id", "")
+        and str(rule.get("cwe", "")).startswith("CWE-")
+        for rule in rules
+    )
+
+
+def test_python_auth_guard_suppresses_missing_auth_route_finding():
+    code = """
+from flask import Flask, request, abort
+app = Flask(__name__)
+
+@app.get('/admin/users')
+def admin_users():
+    if not request.user.is_authenticated:
+        abort(403)
+    return list_users()
+"""
+    result = analyze_python(code, filename="app.py")
+
+    assert not any(f.rule_id == "PY-020" for f in result.findings)
+
+
+def test_python_explicit_permission_guard_downgrades_access_control_finding():
+    code = """
+from flask import Flask
+app = Flask(__name__)
+
+@app.get('/admin/users')
+@login_required
+def admin_users():
+    if permission_check():
+        return list_users()
+    return deny()
+"""
+    result = analyze_python(code, filename="app.py")
+
+    finding = next(f for f in result.findings if f.rule_id == "PY-027")
+    assert finding.confidence <= 0.15
+    assert finding.severity != Severity.CRITICAL

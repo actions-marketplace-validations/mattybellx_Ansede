@@ -1,0 +1,124 @@
+language: javascript
+framework: react_frontend
+version: "1.0"
+description: "React frontend security rules: XSS, unsafe rendering, and data exposure"
+rules:
+  - id: registry/react/xss/dangerous-inner-html
+    title: "XSS via dangerouslySetInnerHTML with user data"
+    cwe: CWE-79
+    severity: critical
+    pattern_type: taint_sink
+    sinks:
+      - dangerouslySetInnerHTML={{ __html:
+      - dangerouslySetInnerHTML={{__html:
+    suggestion: "Use DOMPurify.sanitize() before setting innerHTML, or use a safe rendering library"
+
+  - id: registry/react/xss/href-javascript
+    title: "XSS via javascript: in href from user data"
+    cwe: CWE-79
+    severity: critical
+    pattern_type: regex
+    regex: "href\\s*=\\s*\\{.*user|href=\\{url\\}|href=\\{link\\}"
+    suggestion: "Validate href values; block javascript: and data: schemes"
+
+  - id: registry/react/postmessage/no-origin-check
+    title: "postMessage handler without origin validation"
+    cwe: CWE-346
+    severity: high
+    pattern_type: regex
+    regex: "addEventListener\\(['\"]message['\"].*(?!event\\.origin)"
+    suggestion: "Always check event.origin against a trusted allowlist in message handlers"
+
+  - id: registry/react/eval/jsx-eval
+    title: "Code Injection via eval in React component"
+    cwe: CWE-94
+    severity: critical
+    pattern_type: taint_sink
+    sinks:
+      - eval(props.
+      - eval(this.props.
+      - new Function(props.
+    suggestion: "Never evaluate user-controlled props as code"
+
+  - id: registry/react/dom/ref-inner-html
+    title: "XSS via direct innerHTML assignment through React ref"
+    cwe: CWE-79
+    severity: high
+    pattern_type: taint_sink
+    sinks:
+      - ref.current.innerHTML = user
+      - divRef.current.innerHTML =
+      - containerRef.current.innerHTML =
+    suggestion: "Use React's virtual DOM; sanitize HTML with DOMPurify if innerHTML is required"
+
+  - id: registry/react/storage/localstorage-sensitive
+    title: "Sensitive data stored in localStorage"
+    cwe: CWE-312
+    severity: high
+    pattern_type: taint_sink
+    sinks:
+      - localStorage.setItem('token',
+      - localStorage.setItem('password',
+      - localStorage.setItem('secret',
+      - sessionStorage.setItem('token',
+    suggestion: "Store security tokens in httpOnly cookies instead of localStorage"
+
+  - id: registry/react/injection/url-redirect
+    title: "Open Redirect via window.location with user data"
+    cwe: CWE-601
+    severity: high
+    pattern_type: taint_sink
+    sinks:
+      - window.location.href = props.
+      - window.location.href = params.
+      - window.location.replace(user
+    suggestion: "Validate redirect URLs against an allowlist before navigation"
+
+  - id: registry/react/dom/script-injection
+    title: "Dynamic script injection from user data"
+    cwe: CWE-79
+    severity: critical
+    pattern_type: taint_sink
+    sinks:
+      - document.createElement('script')
+      - script.src = user
+      - document.write(user
+    suggestion: "Never create script elements dynamically from user input"
+
+  - id: registry/react/secrets/hardcoded-api-key
+    title: "Hardcoded API key in React component"
+    cwe: CWE-798
+    severity: critical
+    pattern_type: regex
+    regex: "REACT_APP_[A-Z_]*KEY\\s*=\\s*['\"][A-Za-z0-9]{16,}['\"]"
+    suggestion: "Store secrets server-side; only expose public keys via REACT_APP_ env vars"
+
+  - id: registry/react/cors/fetch-credentials-any
+    title: "fetch with credentials: 'include' and wildcard CORS risk"
+    cwe: CWE-346
+    severity: medium
+    pattern_type: regex
+    regex: "credentials\\s*:\\s*['\"]include['\"]"
+    suggestion: "Ensure CORS origin is restricted when using credentials: 'include'"
+
+  - id: registry/react/prototype/object-spread-user
+    title: "Prototype pollution via object spread with user data"
+    cwe: CWE-1321
+    severity: medium
+    pattern_type: taint_sink
+    sinks:
+      - { ...userData
+      - Object.assign({}, userData
+      - Object.assign(target, props.data
+    suggestion: "Sanitize user objects; check for __proto__ and constructor keys"
+
+  - id: registry/react/path/router-user-redirect
+    title: "Unvalidated redirect via React Router navigate/push"
+    cwe: CWE-601
+    severity: high
+    pattern_type: taint_sink
+    sinks:
+      - navigate(userInput
+      - history.push(userInput
+      - router.push(params.
+    suggestion: "Validate navigation paths against a list of allowed routes"

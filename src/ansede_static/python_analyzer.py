@@ -638,9 +638,16 @@ def _collect_fastapi_guarded_receivers(tree: ast.Module, auth_aliases: set[str])
     return guarded
 
 
-def _fastapi_route_has_auth_dependency(fnode: ast.FunctionDef | ast.AsyncFunctionDef) -> bool:
+def _fastapi_route_has_auth_dependency(
+    fnode: ast.FunctionDef | ast.AsyncFunctionDef,
+    auth_aliases: set[str] | None = None,
+) -> bool:
     """Return True when any function parameter uses a FastAPI Depends/Security call
     that looks like an authentication dependency."""
+    aliases = auth_aliases or set()
+    for dep_call in _iter_fastapi_dependency_calls(fnode):
+        if _fastapi_dep_call_has_auth_signal(dep_call, aliases):
+            return True
     for arg in (
         *fnode.args.args,
         *fnode.args.kwonlyargs,
@@ -3100,6 +3107,17 @@ def _fastapi_route_is_receiver_guarded(
     return bool(_fastapi_route_receivers(fnode) & guarded_receivers)
 
 
+def _annotation_fastapi_dependency_calls(annotation: ast.AST | None) -> tuple[ast.Call, ...]:
+    """Return Depends/Security calls nested inside annotations like Annotated[..., Depends(dep)]."""
+    if annotation is None:
+        return ()
+    dep_calls: list[ast.Call] = []
+    for node in ast.walk(annotation):
+        if isinstance(node, ast.Call) and _decorator_name(node.func) in _FASTAPI_DEPENDENCY_CALLEES:
+            dep_calls.append(node)
+    return tuple(dep_calls)
+
+
 def _iter_fastapi_dependency_calls(
     fnode: ast.FunctionDef | ast.AsyncFunctionDef,
 ) -> tuple[ast.Call, ...]:
@@ -3108,6 +3126,13 @@ def _iter_fastapi_dependency_calls(
     for default in [*fnode.args.defaults, *fnode.args.kw_defaults]:
         if isinstance(default, ast.Call) and _decorator_name(default.func) in _FASTAPI_DEPENDENCY_CALLEES:
             dep_calls.append(default)
+    for arg in (
+        *fnode.args.args,
+        *fnode.args.kwonlyargs,
+        *([] if fnode.args.vararg is None else [fnode.args.vararg]),
+        *([] if fnode.args.kwarg is None else [fnode.args.kwarg]),
+    ):
+        dep_calls.extend(_annotation_fastapi_dependency_calls(arg.annotation))
     for deco in _iter_route_decorators(fnode):
         for kw in deco.keywords:
             if kw.arg != "dependencies" or not isinstance(kw.value, (ast.List, ast.Tuple, ast.Set)):
@@ -3497,7 +3522,7 @@ def _rule_12(ctx: _Ctx) -> list[Finding]:
                 has_auth = True
 
         # FastAPI Depends() / Security() dependency injection as auth signal
-        if not has_auth and _fastapi_route_has_auth_dependency(fnode):
+        if not has_auth and _fastapi_route_has_auth_dependency(fnode, ctx.fastapi_auth_aliases or set()):
             has_auth = True
 
         # Django REST Framework permission_classes decorator
@@ -5420,6 +5445,10 @@ def _rule_31(ctx: _Ctx) -> list[Finding]:
     """CWE-200: Sensitive information exposed through error/debug output."""
     findings: list[Finding] = []
     lines = ctx.lines
+    _DEBUG_ENABLE_RE = re.compile(
+        r'(?:\bdebug\s*=\s*True\b|(?:app|application)\.config\[\s*["\']DEBUG["\']\s*\]\s*=\s*True\b)',
+        re.IGNORECASE,
+    )
     _TRACEBACK_EXPOSE_RE = re.compile(
         r'\b(?:traceback\.print_exc|traceback\.format_exc|sys\.exc_info)\s*\(',
         re.IGNORECASE,
@@ -5432,7 +5461,16 @@ def _rule_31(ctx: _Ctx) -> list[Finding]:
         stripped = line.strip()
         if stripped.startswith("#"):
             continue
-        if _TRACEBACK_EXPOSE_RE.search(stripped):
+        if _DEBUG_ENABLE_RE.search(stripped):
+            findings.append(Finding(
+                category="security", severity=Severity.MEDIUM,
+                title=f"CWE-200: debug=True may expose tracebacks at line {lineno}",
+                description=f"Debug mode enabled at L{lineno}; production errors can leak stack traces, configuration details, and other internal information.",
+                line=lineno,
+                suggestion="Disable debug mode in production and serve generic error pages to clients.",
+                rule_id="PY-039", cwe="CWE-200", agent="python-analyzer",
+            ))
+        elif _TRACEBACK_EXPOSE_RE.search(stripped):
             findings.append(Finding(
                 category="security", severity=Severity.MEDIUM,
                 title=f"CWE-200: Traceback/error details exposed to users at line {lineno}",
@@ -5530,6 +5568,12 @@ def _rule_34(ctx: _Ctx) -> list[Finding]:
         r'(?:^|\s|=|\()(?:range\s*\(|\[[^\]]*\]\s*\*\s*|bytes\s*\(|bytearray\s*\(|re\.(?:compile|search|match)|\w+\.read\s*\()',
         re.IGNORECASE,
     )
+    _ZIPFILE_RE = re.compile(r'\b(?:zipfile\.ZipFile|ZipFile)\s*\(', re.IGNORECASE)
+    _ZIP_EXTRACT_RE = re.compile(r'\.extractall\s*\(', re.IGNORECASE)
+    _ZIP_GUARD_RE = re.compile(
+        r'(?:infolist\s*\(|namelist\s*\(|file_size|compress_size|total_size|max_(?:files|size)|zipinfo)',
+        re.IGNORECASE,
+    )
     lines = ctx.lines
     for lineno, line in enumerate(lines, 1):
         stripped = line.strip()
@@ -5548,6 +5592,24 @@ def _rule_34(ctx: _Ctx) -> list[Finding]:
                     suggestion="Clamp user-controlled numeric values: `size = min(int(request.args.get('size', 100)), 10000)`.",
                     rule_id="PY-042", cwe="CWE-400", agent="python-analyzer",
                 ))
+    for fname, fnode in ctx.func_defs.items():
+        code_block = ctx.lines[fnode.lineno - 1:fnode.end_lineno] if fnode.end_lineno else []
+        block_text = "\n".join(code_block)
+        if not (_ZIPFILE_RE.search(block_text) and _ZIP_EXTRACT_RE.search(block_text)):
+            continue
+        if _ZIP_GUARD_RE.search(block_text):
+            continue
+        findings.append(Finding(
+            category="security", severity=Severity.MEDIUM,
+            title=f"CWE-400: Zip extraction in `{fname}()` may allow zip-bomb resource exhaustion",
+            description=(
+                f"`{fname}()` extracts an archive with `extractall()` and no visible size, entry-count, or compression-ratio guard. "
+                "A crafted zip bomb can exhaust disk, CPU, or memory resources."
+            ),
+            line=fnode.lineno,
+            suggestion="Validate archive entry counts and total uncompressed size before calling `extractall()`.",
+            rule_id="PY-042", cwe="CWE-400", agent="python-analyzer",
+        ))
     return findings
 
 
@@ -5561,6 +5623,9 @@ def _rule_35(ctx: _Ctx) -> list[Finding]:
     _SECURE_FALSE_RE = re.compile(r'secure\s*=\s*False', re.IGNORECASE)
     _SESSION_COOKIE_RE = re.compile(
         r'SESSION_COOKIE_SECURE\s*=\s*False|SESSION_COOKIE_SECURE\s*=\s*(?:0|None)', re.IGNORECASE,
+    )
+    _SESSION_COOKIE_TRUE_RE = re.compile(
+        r'SESSION_COOKIE_SECURE\s*=\s*True|SESSION_COOKIE_SECURE\s*=\s*1', re.IGNORECASE,
     )
     lines = ctx.lines
     for lineno, line in enumerate(lines, 1):
@@ -5585,6 +5650,26 @@ def _rule_35(ctx: _Ctx) -> list[Finding]:
                 suggestion="Set `SESSION_COOKIE_SECURE = True` in Django/Flask configuration.",
                 rule_id="PY-043", cwe="CWE-614", agent="python-analyzer",
             ))
+    code_text = "\n".join(lines)
+    if (
+        ("from flask import" in code_text or "Flask(" in code_text)
+        and re.search(r'\bsession\s*\[', code_text)
+        and ("SECRET_KEY" in code_text or "secret_key" in code_text)
+        and not _SESSION_COOKIE_TRUE_RE.search(code_text)
+        and not _SESSION_COOKIE_RE.search(code_text)
+    ):
+        session_line = next((idx for idx, line in enumerate(lines, 1) if re.search(r'\bsession\s*\[', line)), 1)
+        findings.append(Finding(
+            category="security", severity=Severity.MEDIUM,
+            title=f"CWE-614: Flask session cookie may be sent without Secure flag at line {session_line}",
+            description=(
+                "Flask session state is used, but `SESSION_COOKIE_SECURE` is not enabled in configuration. "
+                "Session cookies may be transmitted over cleartext HTTP if TLS is not enforced."
+            ),
+            line=session_line,
+            suggestion="Set `app.config['SESSION_COOKIE_SECURE'] = True` for session-bearing Flask apps.",
+            rule_id="PY-043", cwe="CWE-614", agent="python-analyzer",
+        ))
     return findings
 
 
@@ -5691,11 +5776,15 @@ def _rule_43(ctx: _Ctx) -> list[Finding]:
     """CWE-352: State-changing endpoints without CSRF protection."""
     findings: list[Finding] = []
     _CSRF_MUTATING_DECORATOR_RE = re.compile(
-        r'@(?:app|bp|blueprint)\.(?:route|post|put|patch|delete)\s*\(',
+        r'(?:app|bp|blueprint)\.(?:post|put|patch|delete)\s*\(',
+        re.IGNORECASE,
+    )
+    _CSRF_ROUTE_METHOD_RE = re.compile(
+        r'(?:app|bp|blueprint)\.route\s*\([^\)]*methods\s*=\s*\[[^\]]*(?:POST|PUT|PATCH|DELETE)',
         re.IGNORECASE,
     )
     _CSRF_FASTAPI_METHOD_RE = re.compile(
-        r'@(?:app|router)\.(?:post|put|patch|delete)\s*\(',
+        r'(?:app|router)\.(?:post|put|patch|delete)\s*\(',
         re.IGNORECASE,
     )
     _CSRF_PROTECTION_RE = re.compile(
@@ -5716,7 +5805,11 @@ def _rule_43(ctx: _Ctx) -> list[Finding]:
         has_mutating_decorator = False
         for deco in fnode.decorator_list:
             deco_str = ast.unparse(deco) if hasattr(ast, "unparse") else ""
-            if _CSRF_MUTATING_DECORATOR_RE.search(deco_str) or _CSRF_FASTAPI_METHOD_RE.search(deco_str):
+            if (
+                _CSRF_MUTATING_DECORATOR_RE.search(deco_str)
+                or _CSRF_FASTAPI_METHOD_RE.search(deco_str)
+                or _CSRF_ROUTE_METHOD_RE.search(deco_str)
+            ):
                 has_mutating_decorator = True
                 break
         if not has_mutating_decorator:
@@ -5747,6 +5840,88 @@ def _rule_43(ctx: _Ctx) -> list[Finding]:
             ),
         ))
     return _assign_rule_ids(findings, "PY-051")
+
+
+def _rule_45(ctx: _Ctx) -> list[Finding]:
+    """CWE-90/CWE-470 supplemental Python framework heuristics."""
+    findings: list[Finding] = []
+    route_param_re = re.compile(r'<(?:[^:>]+:)?([A-Za-z_]\w*)>')
+    code_text = "\n".join(ctx.lines)
+    if (
+        ("request.args.get" in code_text or "request.form.get" in code_text or "request.values.get" in code_text)
+        and "ldap" in code_text.lower()
+        and re.search(r'\.(?:search|search_s|search_ext)\s*\(', code_text)
+        and (
+            re.search(r'f["\'][^\n]*\{[^\}]+\}', code_text)
+            or "%" in code_text
+            or ".format(" in code_text
+        )
+    ):
+        ldap_line = next(
+            (idx for idx, line in enumerate(ctx.lines, 1) if re.search(r'\.(?:search|search_s|search_ext)\s*\(', line)),
+            1,
+        )
+        findings.append(Finding(
+            category="security", severity=Severity.HIGH,
+            title=f"CWE-90: LDAP injection via user-controlled filter at line {ldap_line}",
+            description=(
+                "LDAP search filter appears to be built from request-derived data without escaping LDAP metacharacters. "
+                "Attackers can manipulate or broaden the directory query."
+            ),
+            line=ldap_line,
+            suggestion="Escape LDAP filter metacharacters before embedding user input into LDAP search filters.",
+            rule_id="PY-053", cwe="CWE-90", agent="python-analyzer",
+        ))
+    for fname, fnode in ctx.func_defs.items():
+        code_block = ctx.lines[fnode.lineno - 1:fnode.end_lineno] if fnode.end_lineno else []
+        block_text = "\n".join(code_block)
+
+        if (
+            ("request.args.get" in block_text or "request.form.get" in block_text or "request.values.get" in block_text)
+            and re.search(r'\.(?:search|search_s|search_ext)\s*\(', block_text)
+            and (
+                re.search(r'f["\'][^\n]*\{[^\}]+\}', block_text)
+                or "%" in block_text
+                or ".format(" in block_text
+            )
+        ):
+            findings.append(Finding(
+                category="security", severity=Severity.HIGH,
+                title=f"CWE-90: LDAP injection via user-controlled filter in `{fname}()`",
+                description=(
+                    f"`{fname}()` builds an LDAP search filter from request-derived data without escaping LDAP metacharacters. "
+                    "Attackers can broaden or manipulate the directory query."
+                ),
+                line=fnode.lineno,
+                suggestion="Escape LDAP filter metacharacters before embedding user input into LDAP search filters.",
+                rule_id="PY-053", cwe="CWE-90", agent="python-analyzer",
+            ))
+
+        route_params: set[str] = set()
+        for deco in fnode.decorator_list:
+            deco_str = ast.unparse(deco) if hasattr(ast, "unparse") else ""
+            route_params.update(route_param_re.findall(deco_str))
+        if not route_params:
+            continue
+        if not re.search(r'\bgetattr\s*\(', block_text):
+            continue
+        if re.search(r'ALLOWED_|allowlist|allowed_actions|permitted_actions', block_text, re.IGNORECASE):
+            continue
+        for param in route_params:
+            if re.search(rf'\bgetattr\s*\([^\n]*\b{re.escape(param)}\b', block_text):
+                findings.append(Finding(
+                    category="security", severity=Severity.HIGH,
+                    title=f"CWE-470: Unsafe reflection via route parameter in `{fname}()`",
+                    description=(
+                        f"Route parameter `{param}` flows into `getattr()` in `{fname}()` without an explicit allowlist. "
+                        "An attacker can trigger arbitrary method dispatch or sensitive introspection paths."
+                    ),
+                    line=fnode.lineno,
+                    suggestion="Validate route-driven action names against a fixed allowlist before calling `getattr()`.",
+                    rule_id="PY-054", cwe="CWE-470", agent="python-analyzer",
+                ))
+                break
+    return findings
 
 
 def _rule_44(ctx: _Ctx) -> list[Finding]:
@@ -5864,7 +6039,7 @@ def _detect(code: str, filename: str = "", global_graph: object = None) -> list[
         _rule_26, _rule_27, _rule_28, _rule_29, _rule_30,
         _rule_31, _rule_32, _rule_33, _rule_34, _rule_35,
         _rule_36, _rule_37, _rule_38, _rule_39, _rule_40,
-        _rule_41, _rule_42, _rule_43, _rule_44,
+        _rule_41, _rule_42, _rule_43, _rule_44, _rule_45,
     ):
         findings.extend(rule_fn(ctx))
 
@@ -5923,9 +6098,10 @@ def _detect(code: str, filename: str = "", global_graph: object = None) -> list[
                     continue
         filtered.append(f)
 
-    # ── Set confidence = 1.0 and generate auto-fixes ──────────────────────
+    # ── Finalize confidence defaults and generate auto-fixes ───────────────
     for f in filtered:
-        f.confidence = 1.0
+        if f.confidence <= 0.0:
+            f.confidence = 1.0
         if not f.auto_fix:
             f.auto_fix = _generate_auto_fix(f, lines)
 

@@ -1,0 +1,102 @@
+language: javascript
+framework: knex_js
+version: "1.0"
+description: "Knex.js query builder security rules"
+rules:
+  - id: registry/knex/sqli/whereraw-user
+    title: "SQL Injection via knex.whereRaw() with user data"
+    cwe: CWE-89
+    severity: critical
+    pattern_type: taint_sink
+    sinks:
+      - .whereRaw(req.query.
+      - .whereRaw(req.body.
+      - .whereRaw(`
+    suggestion: "Use .where('column', value) or .whereRaw('col = ?', [value])"
+
+  - id: registry/knex/sqli/raw-user
+    title: "SQL Injection via knex.raw() with user string"
+    cwe: CWE-89
+    severity: critical
+    pattern_type: taint_sink
+    sinks:
+      - knex.raw(`
+      - db.raw(`
+      - knex.raw(req.query.
+    suggestion: "Use knex.raw('SELECT * WHERE id = ?', [id]) with bindings"
+
+  - id: registry/knex/sqli/orderbyraw-user
+    title: "SQL Injection via knex.orderByRaw() with user data"
+    cwe: CWE-89
+    severity: critical
+    pattern_type: taint_sink
+    sinks:
+      - .orderByRaw(req.query.
+      - .orderByRaw(`${req.
+    suggestion: "Validate sort column against an allowlist before using in orderByRaw"
+
+  - id: registry/knex/sqli/joinraw-user
+    title: "SQL Injection via knex.joinRaw() with user data"
+    cwe: CWE-89
+    severity: critical
+    pattern_type: taint_sink
+    sinks:
+      - .joinRaw(req.
+      - .joinRaw(`
+    suggestion: "Use .join('table', 'a.id', '=', 'b.id') with trusted identifiers"
+
+  - id: registry/knex/sqli/havingraw-user
+    title: "SQL Injection via knex.havingRaw() with user data"
+    cwe: CWE-89
+    severity: critical
+    pattern_type: taint_sink
+    sinks:
+      - .havingRaw(req.
+      - .havingRaw(`
+    suggestion: "Use .having() with bound parameters: .havingRaw('count > ?', [count])"
+
+  - id: registry/knex/credentials/hardcoded
+    title: "Hardcoded credentials in Knex connection config"
+    cwe: CWE-798
+    severity: critical
+    pattern_type: regex
+    regex: "knex\\(\\{[^}]*password\\s*:\\s*['\"][^'\"]{1,64}['\"]"
+    suggestion: "Load database credentials from environment variables"
+
+  - id: registry/knex/sqli/select-columns-user
+    title: "SQL Injection via .select() with user-controlled column list"
+    cwe: CWE-89
+    severity: high
+    pattern_type: taint_sink
+    sinks:
+      - .select(req.query.fields
+      - .select(req.body.columns
+    suggestion: "Validate column names against a defined schema before using in .select()"
+
+  - id: registry/knex/dos/no-limit
+    title: "Knex query without pagination limit"
+    cwe: CWE-400
+    severity: medium
+    pattern_type: regex
+    regex: "\\.select\\([^)]*\\)(?!.*\\.limit)"
+    suggestion: "Add .limit() to all list queries: .select('*').limit(100)"
+
+  - id: registry/knex/sqli/tablename-user
+    title: "SQL Injection via user-controlled table name in knex()"
+    cwe: CWE-89
+    severity: critical
+    pattern_type: taint_sink
+    sinks:
+      - knex(req.query.table
+      - db(req.body.table
+    suggestion: "Validate table names against an explicit allowlist"
+
+  - id: registry/knex/sqli/where-operator
+    title: "SQL Injection via .where() with user-controlled operator"
+    cwe: CWE-89
+    severity: high
+    pattern_type: taint_sink
+    sinks:
+      - .where(col, req.body.operator
+      - .where(col, req.query.op
+    suggestion: "Validate operators against allowlist ['=', '>', '<', '>=', '<=']"

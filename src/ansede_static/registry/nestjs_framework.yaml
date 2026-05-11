@@ -1,0 +1,109 @@
+language: javascript
+framework: nestjs_framework
+version: "1.0"
+description: "NestJS framework security rules"
+rules:
+  - id: registry/nestjs/auth/public-guard-missing
+    title: "NestJS endpoint marked @Public() without security review"
+    cwe: CWE-306
+    severity: high
+    pattern_type: regex
+    regex: "@Public\\(\\)\\s*@(?:Get|Post|Put|Patch|Delete)\\("
+    suggestion: "Review @Public() endpoints to ensure they don't expose sensitive operations"
+
+  - id: registry/nestjs/auth/no-roles-decorator
+    title: "NestJS controller method without @Roles() or @UseGuards()"
+    cwe: CWE-306
+    severity: high
+    pattern_type: regex
+    regex: "@(?:Get|Post|Put|Patch|Delete)\\((?:[^)]*|)\\)\\s*(?:async\\s*)?\\w+"
+    suggestion: "Add @UseGuards(AuthGuard) and @Roles('admin') to all protected endpoints"
+
+  - id: registry/nestjs/sqli/typeorm-raw
+    title: "SQL Injection via TypeORM query() in NestJS service"
+    cwe: CWE-89
+    severity: critical
+    pattern_type: taint_sink
+    sinks:
+      - this.connection.query(`
+      - this.dataSource.query(`
+      - manager.query(`
+    suggestion: "Use parameterized queries: this.connection.query('SELECT ... WHERE id = $1', [id])"
+
+  - id: registry/nestjs/sqli/repository-raw
+    title: "SQL Injection via NestJS repository createQueryBuilder raw where"
+    cwe: CWE-89
+    severity: critical
+    pattern_type: taint_sink
+    sinks:
+      - .createQueryBuilder().where(`
+      - .createQueryBuilder().andWhere(`
+    suggestion: "Use .where('id = :id', { id }) parameterized syntax"
+
+  - id: registry/nestjs/auth/jwt-secret-hardcoded
+    title: "Hardcoded JWT secret in NestJS JwtModule"
+    cwe: CWE-798
+    severity: critical
+    pattern_type: regex
+    regex: "JwtModule\\.register\\(\\{[^}]*secret\\s*:\\s*['\"][^'\"]{4,}['\"]"
+    suggestion: "Use ConfigService: secret: configService.get('JWT_SECRET')"
+
+  - id: registry/nestjs/cors/allow-all
+    title: "NestJS CORS configured for all origins"
+    cwe: CWE-346
+    severity: high
+    pattern_type: regex
+    regex: "app\\.enableCors\\(\\{[^}]*origin\\s*:\\s*['\"]\\*['\"]"
+    suggestion: "Restrict CORS to specific trusted origins"
+
+  - id: registry/nestjs/guard/controller-unprotected
+    title: "NestJS controller without class-level guard"
+    cwe: CWE-306
+    severity: medium
+    pattern_type: regex
+    regex: "@Controller\\([^)]*\\)\\s*(?!.*@UseGuards)"
+    suggestion: "Apply @UseGuards(JwtAuthGuard) at the controller class level"
+
+  - id: registry/nestjs/pipe/no-validation
+    title: "NestJS endpoint receives body without ValidationPipe"
+    cwe: CWE-20
+    severity: medium
+    pattern_type: regex
+    regex: "@Body\\(\\)\\s+\\w+:\\s*(?:any|object|Record)"
+    suggestion: "Use typed DTOs with class-validator decorators and global ValidationPipe"
+
+  - id: registry/nestjs/injection/prototype-pollution
+    title: "Prototype Pollution via NestJS body spread"
+    cwe: CWE-1321
+    severity: high
+    pattern_type: taint_sink
+    sinks:
+      - Object.assign(entity, body
+      - Object.assign(user, dto
+    suggestion: "Use plainToInstance() and validateOrReject() from class-transformer/class-validator"
+
+  - id: registry/nestjs/upload/unrestricted
+    title: "Unrestricted file upload in NestJS @UploadedFile()"
+    cwe: CWE-434
+    severity: high
+    pattern_type: regex
+    regex: "@UploadedFile\\(\\)(?!.*FileTypeValidator|.*MaxFileSizeValidator)"
+    suggestion: "Use ParseFilePipe with FileTypeValidator and MaxFileSizeValidator"
+
+  - id: registry/nestjs/config/env-exposed
+    title: "NestJS config module exposing all env vars to frontend"
+    cwe: CWE-200
+    severity: high
+    pattern_type: regex
+    regex: "ConfigModule\\.forRoot\\(\\{[^}]*isGlobal\\s*:\\s*true"
+    suggestion: "Use validationSchema with Joi to restrict which env vars are loaded"
+
+  - id: registry/nestjs/sqli/direct-injection-dto
+    title: "SQL Injection via DTO field directly in query"
+    cwe: CWE-89
+    severity: critical
+    pattern_type: taint_sink
+    sinks:
+      - WHERE id = '${dto.
+      - WHERE name = '${body.
+    suggestion: "Use parameterized NestJS TypeORM repository methods"

@@ -1,0 +1,180 @@
+language: python
+framework: pymongo
+version: "1.0"
+description: "MongoDB/PyMongo security rules: NoSQL injection, auth, and data exposure"
+rules:
+  - id: registry/pymongo/nosqli/find-user-filter
+    title: "NoSQL Injection via find() with user-controlled filter"
+    cwe: CWE-943
+    severity: critical
+    pattern_type: taint_sink
+    sinks:
+      - collection.find(request.
+      - collection.find(user_
+      - collection.find({user_
+      - db.collection.find(request.
+    suggestion: "Validate and sanitize filter keys/values; use schema validation before querying"
+
+  - id: registry/pymongo/nosqli/find-one-user
+    title: "NoSQL Injection via find_one() with user filter"
+    cwe: CWE-943
+    severity: critical
+    pattern_type: taint_sink
+    sinks:
+      - collection.find_one(request.
+      - collection.find_one(user_
+      - collection.find_one({user_
+    suggestion: "Use explicit typed filter dicts; never pass raw request dicts to queries"
+
+  - id: registry/pymongo/nosqli/where-clause
+    title: "NoSQL Injection via $where operator"
+    cwe: CWE-943
+    severity: critical
+    pattern_type: taint_sink
+    sinks:
+      - '$where':
+      - "$where":
+    suggestion: "Avoid $where with user data; use $expr with aggregation operators"
+
+  - id: registry/pymongo/nosqli/regex-injection
+    title: "NoSQL Injection via $regex with user input"
+    cwe: CWE-943
+    severity: high
+    pattern_type: taint_sink
+    sinks:
+      - '$regex': user_
+      - '$regex': request.
+      - "$regex": user_
+    suggestion: "Escape regex special chars or use exact equality matches"
+
+  - id: registry/pymongo/nosqli/update-set-user
+    title: "NoSQL Injection via update with user-controlled $set"
+    cwe: CWE-943
+    severity: critical
+    pattern_type: taint_sink
+    sinks:
+      - collection.update_one(
+      - collection.update_many(
+      - collection.replace_one(
+    suggestion: "Validate update document structure; restrict allowed update keys"
+
+  - id: registry/pymongo/nosqli/aggregate-user
+    title: "NoSQL Injection via aggregate pipeline with user data"
+    cwe: CWE-943
+    severity: high
+    pattern_type: taint_sink
+    sinks:
+      - collection.aggregate([{user_
+      - collection.aggregate(pipeline=
+    suggestion: "Validate pipeline stages; never inject user strings into $match or $group"
+
+  - id: registry/pymongo/auth/no-auth-source
+    title: "MongoDB connection without authentication"
+    cwe: CWE-306
+    severity: critical
+    pattern_type: regex
+    regex: "MongoClient\\(['\"]mongodb://(?!.*:[^@]+@)"
+    suggestion: "Always include credentials in the connection string or use authSource"
+
+  - id: registry/pymongo/auth/hardcoded-uri
+    title: "Hardcoded MongoDB URI with credentials"
+    cwe: CWE-798
+    severity: critical
+    pattern_type: regex
+    regex: "MongoClient\\(['\"]mongodb://[^:]+:[^@]+@"
+    suggestion: "Load MongoDB URI from environment variables"
+
+  - id: registry/pymongo/auth/no-tls
+    title: "MongoDB connection without TLS"
+    cwe: CWE-319
+    severity: high
+    pattern_type: regex
+    regex: "MongoClient\\(.*tls\\s*=\\s*False|ssl\\s*=\\s*False"
+    suggestion: "Enable TLS: MongoClient(tls=True, tlsCAFile='ca.pem')"
+
+  - id: registry/pymongo/exposure/return-all-docs
+    title: "Returning all collection documents to client"
+    cwe: CWE-200
+    severity: high
+    pattern_type: taint_sink
+    sinks:
+      - list(collection.find())
+      - list(db.collection.find())
+    suggestion: "Paginate results and project only required fields"
+
+  - id: registry/pymongo/nosqli/grid-fs-user
+    title: "NoSQL Injection via GridFS with user filename"
+    cwe: CWE-22
+    severity: high
+    pattern_type: taint_sink
+    sinks:
+      - fs.find({'filename': user_
+      - gridfs.find({'filename': request.
+    suggestion: "Validate and sanitize filenames before GridFS queries"
+
+  - id: registry/pymongo/cmd/mapreduce-user
+    title: "Code Injection via MapReduce with user code"
+    cwe: CWE-94
+    severity: critical
+    pattern_type: taint_sink
+    sinks:
+      - collection.map_reduce(user_
+      - collection.inline_map_reduce(user_
+    suggestion: "Never pass user-controlled strings as map/reduce functions"
+
+  - id: registry/pymongo/nosqli/bulk-write-user
+    title: "NoSQL Injection via bulk_write with user operations"
+    cwe: CWE-943
+    severity: high
+    pattern_type: taint_sink
+    sinks:
+      - collection.bulk_write(user_
+      - collection.bulk_write(operations=request.
+    suggestion: "Validate each operation type and document structure before bulk writes"
+
+  - id: registry/pymongo/nosqli/delete-user-filter
+    title: "Privilege escalation via delete_many with user filter"
+    cwe: CWE-943
+    severity: critical
+    pattern_type: taint_sink
+    sinks:
+      - collection.delete_many(request.
+      - collection.delete_many(user_
+      - collection.delete_many({user_
+    suggestion: "Restrict delete filters; add ownership checks before bulk deletes"
+
+  - id: registry/pymongo/auth/motor-no-auth
+    title: "Motor (async MongoDB) connection without authentication"
+    cwe: CWE-306
+    severity: critical
+    pattern_type: regex
+    regex: "motor\\.motor_asyncio\\.AsyncIOMotorClient\\(['\"]mongodb://(?!.*:[^@]+@)"
+    suggestion: "Include credentials in the Motor connection string"
+
+  - id: registry/pymongo/exposure/password-in-doc
+    title: "Password stored in MongoDB document without hashing"
+    cwe: CWE-256
+    severity: critical
+    pattern_type: taint_sink
+    sinks:
+      - collection.insert_one({'password': password
+      - collection.insert_one({"password": password
+    suggestion: "Hash passwords with bcrypt or Argon2 before storing in MongoDB"
+
+  - id: registry/pymongo/nosqli/eval-command
+    title: "Code Injection via MongoDB eval command"
+    cwe: CWE-94
+    severity: critical
+    pattern_type: taint_sink
+    sinks:
+      - db.command('eval',
+      - db.eval(
+    suggestion: "The eval command is removed in MongoDB 4.2+; never pass user code"
+
+  - id: registry/pymongo/nosqli/where-js
+    title: "JavaScript execution via $where with user data"
+    cwe: CWE-94
+    severity: critical
+    pattern_type: regex
+    regex: "\\$where.*function\\s*\\("
+    suggestion: "Avoid $where entirely; use aggregation expressions instead"

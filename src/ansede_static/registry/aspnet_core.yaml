@@ -1,0 +1,141 @@
+language: csharp
+framework: aspnet_core
+version: "1.0"
+description: "ASP.NET Core security rules"
+rules:
+  - id: registry/aspnet/sqli/sqlcommand-user
+    title: "SQL Injection via SqlCommand with string concatenation"
+    cwe: CWE-89
+    severity: critical
+    pattern_type: taint_sink
+    sinks:
+      - new SqlCommand("SELECT
+      - new SqlCommand("UPDATE
+      - cmd.CommandText = "SELECT
+      - cmd.CommandText += Request.
+    suggestion: "Use parameterized commands: cmd.Parameters.AddWithValue('@id', id)"
+
+  - id: registry/aspnet/sqli/entityframework-raw
+    title: "SQL Injection via EF Core FromSqlRaw with user string"
+    cwe: CWE-89
+    severity: critical
+    pattern_type: taint_sink
+    sinks:
+      - FromSqlRaw($"SELECT
+      - ExecuteSqlRaw($"UPDATE
+      - context.Database.ExecuteSqlRaw(
+    suggestion: "Use FromSqlInterpolated() or EF LINQ methods instead of raw SQL"
+
+  - id: registry/aspnet/xss/htmlstring-user
+    title: "XSS via HtmlString or IHtmlContent with user data"
+    cwe: CWE-79
+    severity: critical
+    pattern_type: taint_sink
+    sinks:
+      - new HtmlString(user
+      - new HtmlString(Request.
+      - Html.Raw(user
+    suggestion: "Use Html.Encode() or Razor's automatic escaping; avoid Html.Raw() with user data"
+
+  - id: registry/aspnet/auth/missing-authorize
+    title: "ASP.NET Core controller action without [Authorize]"
+    cwe: CWE-306
+    severity: high
+    pattern_type: regex
+    regex: "\\[Http(?:Get|Post|Put|Delete|Patch)\\](?!\\s*\\[Authorize)"
+    suggestion: "Add [Authorize] attribute; use [AllowAnonymous] explicitly where public access is intended"
+
+  - id: registry/aspnet/idor/find-by-id
+    title: "IDOR via direct entity lookup without authorization"
+    cwe: CWE-639
+    severity: high
+    pattern_type: taint_sink
+    sinks:
+      - context.Users.FindAsync(id
+      - dbContext.Items.Find(id
+    suggestion: "Add a userId filter: context.Items.Where(i => i.UserId == currentUserId && i.Id == id)"
+
+  - id: registry/aspnet/cors/allow-all
+    title: "ASP.NET Core CORS policy allows all origins"
+    cwe: CWE-346
+    severity: high
+    pattern_type: regex
+    regex: "\\.AllowAnyOrigin\\(\\)"
+    suggestion: "Use .WithOrigins('https://trusted.example.com') to restrict allowed origins"
+
+  - id: registry/aspnet/credentials/connection-string
+    title: "Hardcoded database connection string"
+    cwe: CWE-798
+    severity: critical
+    pattern_type: regex
+    regex: "\"(?:Data Source|Server)=[^\"]*;.*Password=[^\"]+\""
+    suggestion: "Store connection strings in environment variables or Azure Key Vault"
+
+  - id: registry/aspnet/deserialization/json-net
+    title: "Unsafe Deserialization via Newtonsoft.Json with TypeNameHandling"
+    cwe: CWE-502
+    severity: critical
+    pattern_type: regex
+    regex: "TypeNameHandling\\s*=\\s*TypeNameHandling\\.(?:All|Objects|Arrays|Auto)"
+    suggestion: "Use TypeNameHandling.None; use a custom SerializationBinder if polymorphism is needed"
+
+  - id: registry/aspnet/redirect/open-redirect
+    title: "Open Redirect via Response.Redirect with user URL"
+    cwe: CWE-601
+    severity: high
+    pattern_type: taint_sink
+    sinks:
+      - Response.Redirect(Request.Query[
+      - Response.Redirect(returnUrl
+      - Redirect(Request.Form[
+    suggestion: "Use Url.IsLocalUrl() to validate redirect targets"
+
+  - id: registry/aspnet/path/traversal
+    title: "Path Traversal via File.ReadAllText with user path"
+    cwe: CWE-22
+    severity: critical
+    pattern_type: taint_sink
+    sinks:
+      - File.ReadAllText(Request.Query[
+      - File.ReadAllBytes(id
+      - System.IO.File.ReadAllText(path
+    suggestion: "Use Path.GetFullPath and verify the result starts with the allowed base directory"
+
+  - id: registry/aspnet/cmd/process-start
+    title: "Command Injection via Process.Start with user data"
+    cwe: CWE-78
+    severity: critical
+    pattern_type: taint_sink
+    sinks:
+      - Process.Start(Request.Query[
+      - Process.Start(userInput
+    suggestion: "Avoid Process.Start with user data; validate and use ProcessStartInfo with explicit args"
+
+  - id: registry/aspnet/crypto/weak-hash
+    title: "Weak hashing algorithm used in ASP.NET"
+    cwe: CWE-328
+    severity: high
+    pattern_type: taint_sink
+    sinks:
+      - MD5.Create()
+      - SHA1.Create()
+      - new HMACMD5(
+    suggestion: "Use SHA-256 or stronger; use PasswordHasher<TUser> for password hashing"
+
+  - id: registry/aspnet/antiforgery/csrf-disabled
+    title: "CSRF protection disabled via ValidateAntiForgeryToken missing"
+    cwe: CWE-352
+    severity: high
+    pattern_type: regex
+    regex: "\\[HttpPost\\](?!.*ValidateAntiForgeryToken|.*IgnoreAntiforgeryToken)(?!.*\\[ApiController)"
+    suggestion: "Add [ValidateAntiForgeryToken] to all POST actions"
+
+  - id: registry/aspnet/log/sensitive-data
+    title: "Sensitive request data logged in ASP.NET middleware"
+    cwe: CWE-532
+    severity: medium
+    pattern_type: taint_sink
+    sinks:
+      - _logger.LogInformation(Request.Form[
+      - logger.LogDebug(password
+    suggestion: "Mask sensitive fields before logging; never log passwords or tokens"

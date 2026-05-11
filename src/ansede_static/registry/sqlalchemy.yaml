@@ -1,0 +1,284 @@
+language: python
+framework: sqlalchemy
+version: "1.0"
+description: "SQLAlchemy security rules: raw SQL, connection strings, session management, and ORM misuse"
+rules:
+  - id: registry/sqlalchemy/sqli/text-raw
+    title: "SQL Injection via text() with string formatting"
+    cwe: CWE-89
+    severity: critical
+    pattern_type: taint_sink
+    sinks:
+      - text(f"
+      - text("SELECT
+      - text('SELECT
+      - text("INSERT
+      - text("UPDATE
+      - text("DELETE
+    suggestion: "Use bindparams: text('SELECT * WHERE id=:id').bindparams(id=user_id)"
+
+  - id: registry/sqlalchemy/sqli/execute-string
+    title: "SQL Injection via session.execute with raw string"
+    cwe: CWE-89
+    severity: critical
+    pattern_type: taint_sink
+    sinks:
+      - session.execute(f"
+      - session.execute("SELECT
+      - session.execute('SELECT
+      - conn.execute(f"
+    suggestion: "Wrap raw SQL in text() with bindparams"
+
+  - id: registry/sqlalchemy/sqli/engine-execute
+    title: "SQL Injection via engine.execute (deprecated)"
+    cwe: CWE-89
+    severity: critical
+    pattern_type: taint_sink
+    sinks:
+      - engine.execute(
+    suggestion: "engine.execute is removed in SQLAlchemy 2.x; use connection.execute with parameterized text()"
+
+  - id: registry/sqlalchemy/sqli/query-filter-raw
+    title: "SQL Injection via Query.filter with literal string"
+    cwe: CWE-89
+    severity: critical
+    pattern_type: taint_sink
+    sinks:
+      - query.filter(text(
+      - .filter(text(
+      - .having(text(
+    suggestion: "Use ORM column expressions: .filter(Model.col == val) instead of text()"
+
+  - id: registry/sqlalchemy/sqli/from-statement
+    title: "SQL Injection via Query.from_statement"
+    cwe: CWE-89
+    severity: critical
+    pattern_type: taint_sink
+    sinks:
+      - .from_statement(
+      - query.from_statement(
+    suggestion: "Avoid from_statement with user-controlled SQL; use ORM filters"
+
+  - id: registry/sqlalchemy/sqli/literal-column
+    title: "SQL Injection via literal_column with user data"
+    cwe: CWE-89
+    severity: high
+    pattern_type: taint_sink
+    sinks:
+      - literal_column(
+    suggestion: "Use column() or labeled ORM columns instead of literal_column with user data"
+
+  - id: registry/sqlalchemy/sqli/column-raw-order
+    title: "SQL Injection via order_by with raw string"
+    cwe: CWE-89
+    severity: high
+    pattern_type: taint_sink
+    sinks:
+      - .order_by(text(
+      - .order_by(f"
+    suggestion: "Use asc()/desc() with column objects; never pass user data to order_by"
+
+  - id: registry/sqlalchemy/connection/url-hardcoded
+    title: "Hardcoded database URL with credentials"
+    cwe: CWE-798
+    severity: critical
+    pattern_type: regex
+    regex: "create_engine\\(['\"](?:postgresql|mysql|sqlite|mssql)://[^:]+:[^@]+@"
+    suggestion: "Load DATABASE_URL from os.environ; never hardcode credentials"
+
+  - id: registry/sqlalchemy/connection/pool-no-ssl
+    title: "Database connection without SSL/TLS"
+    cwe: CWE-319
+    severity: high
+    pattern_type: regex
+    regex: "create_engine\\(.*sslmode=['\"]disable['\"]"
+    suggestion: "Use sslmode='require' or 'verify-full' for database connections"
+
+  - id: registry/sqlalchemy/session/no-autocommit
+    title: "Session.autocommit=True bypasses transaction safety"
+    cwe: CWE-20
+    severity: medium
+    pattern_type: regex
+    regex: "autocommit\\s*=\\s*True"
+    suggestion: "Use explicit transactions; avoid autocommit=True with user-controlled writes"
+
+  - id: registry/sqlalchemy/session/scope-leak
+    title: "SQLAlchemy Session used outside scoped context"
+    cwe: CWE-772
+    severity: medium
+    pattern_type: taint_sink
+    sinks:
+      - Session()
+      - sessionmaker()
+    suggestion: "Use scoped_session or context-managed sessions to prevent connection leaks"
+
+  - id: registry/sqlalchemy/model/server-default-raw-sql
+    title: "Raw SQL in server_default column definition"
+    cwe: CWE-89
+    severity: medium
+    pattern_type: taint_sink
+    sinks:
+      - server_default=text(
+    suggestion: "Use FetchedValue() or a constant string for server_default"
+
+  - id: registry/sqlalchemy/sqli/union-injection
+    title: "SQL Injection via UNION in raw text query"
+    cwe: CWE-89
+    severity: critical
+    pattern_type: taint_sink
+    sinks:
+      - "UNION SELECT"
+      - "UNION ALL SELECT"
+    suggestion: "Never pass user data into raw SQL strings"
+
+  - id: registry/sqlalchemy/sqli/subquery-raw
+    title: "SQL Injection via subquery with raw string"
+    cwe: CWE-89
+    severity: high
+    pattern_type: taint_sink
+    sinks:
+      - .as_scalar()
+      - select([text(
+    suggestion: "Use SQLAlchemy subquery with ORM expressions"
+
+  - id: registry/sqlalchemy/connection/password-in-log
+    title: "Database password written to log"
+    cwe: CWE-532
+    severity: high
+    pattern_type: taint_sink
+    sinks:
+      - logging.info(str(engine.url
+      - logger.debug(str(engine.url
+      - print(engine.url
+    suggestion: "Use engine.url.render_as_string(hide_password=True)"
+
+  - id: registry/sqlalchemy/events/receive-before-execute-raw
+    title: "Raw SQL inserted via before_cursor_execute event"
+    cwe: CWE-89
+    severity: high
+    pattern_type: taint_sink
+    sinks:
+      - @event.listens_for(engine, 'before_cursor_execute')
+    suggestion: "Validate and sanitize SQL in before_cursor_execute handlers"
+
+  - id: registry/sqlalchemy/mass-assign/from-dict
+    title: "Mass Assignment via Model(**user_dict)"
+    cwe: CWE-915
+    severity: high
+    pattern_type: taint_sink
+    sinks:
+      - Model(**request_data
+      - Model(**data
+    suggestion: "Explicitly assign only allowed fields"
+
+  - id: registry/sqlalchemy/async/execute-raw
+    title: "SQL Injection via AsyncSession.execute with raw text"
+    cwe: CWE-89
+    severity: critical
+    pattern_type: taint_sink
+    sinks:
+      - await session.execute(text(f"
+      - await session.execute(f"
+      - await db.execute(text(f"
+    suggestion: "Use bindparams with named placeholders instead of f-strings in text()"
+
+  - id: registry/sqlalchemy/ddl/execute-unsafe
+    title: "DDL execution with user-controlled statement"
+    cwe: CWE-89
+    severity: critical
+    pattern_type: taint_sink
+    sinks:
+      - DDL(
+      - DDLElement.execute(
+    suggestion: "Never construct DDL statements with user input"
+
+  - id: registry/sqlalchemy/connection/echo-true
+    title: "engine echo=True may expose sensitive SQL in production logs"
+    cwe: CWE-532
+    severity: low
+    pattern_type: regex
+    regex: "create_engine\\(.*echo\\s*=\\s*True"
+    suggestion: "Disable echo=True in production; use event listeners for controlled SQL logging"
+
+  - id: registry/sqlalchemy/bulk/bulk-insert-raw
+    title: "SQL Injection via bulk_insert_mappings with unvalidated data"
+    cwe: CWE-89
+    severity: high
+    pattern_type: taint_sink
+    sinks:
+      - session.bulk_insert_mappings(
+      - session.bulk_update_mappings(
+    suggestion: "Validate all fields before bulk inserts; use strict schema validation"
+
+  - id: registry/sqlalchemy/inspection/table-name-raw
+    title: "SQL Injection via table name from user input"
+    cwe: CWE-89
+    severity: critical
+    pattern_type: taint_sink
+    sinks:
+      - Table(user_
+      - Table(request.
+      - Table(name,
+    suggestion: "Never allow user input to determine table names; use an allowlist"
+
+  - id: registry/sqlalchemy/crypto/connection-no-tls
+    title: "MySQL/PostgreSQL connection without requiring TLS"
+    cwe: CWE-319
+    severity: high
+    pattern_type: regex
+    regex: "create_engine\\(.*connect_args.*ssl.*False"
+    suggestion: "Enable SSL: connect_args={'ssl': {'sslmode': 'require'}}"
+
+  - id: registry/sqlalchemy/hybrid/insecure-property
+    title: "Hybrid property exposes internal sensitive field"
+    cwe: CWE-200
+    severity: medium
+    pattern_type: taint_sink
+    sinks:
+      - @hybrid_property
+    suggestion: "Ensure hybrid properties do not expose raw password hashes or tokens"
+
+  - id: registry/sqlalchemy/sqli/aliased-raw
+    title: "SQL Injection via aliased() with raw SQL alias"
+    cwe: CWE-89
+    severity: medium
+    pattern_type: taint_sink
+    sinks:
+      - aliased(Model, select(
+    suggestion: "Use SQLAlchemy ORM aliases with column objects, not raw SQL"
+
+  - id: registry/sqlalchemy/connection/no-pool-recycle
+    title: "Connection pool without recycling (stale connections)"
+    cwe: CWE-772
+    severity: low
+    pattern_type: regex
+    regex: "create_engine\\((?!.*pool_recycle)"
+    suggestion: "Set pool_recycle=3600 to avoid stale connections being reused"
+
+  - id: registry/sqlalchemy/model/nullable-pk
+    title: "Primary key column marked nullable=True"
+    cwe: CWE-20
+    severity: medium
+    pattern_type: regex
+    regex: "primary_key=True.*nullable=True|nullable=True.*primary_key=True"
+    suggestion: "Primary key columns should never be nullable"
+
+  - id: registry/sqlalchemy/sqli/func-raw
+    title: "SQL Injection via func.count with raw string"
+    cwe: CWE-89
+    severity: high
+    pattern_type: taint_sink
+    sinks:
+      - func.count(text(
+      - func.sum(text(
+    suggestion: "Pass column objects to func; avoid text() inside func calls"
+
+  - id: registry/sqlalchemy/connection/url-from-request
+    title: "Database URL constructed from request data"
+    cwe: CWE-89
+    severity: critical
+    pattern_type: taint_sink
+    sinks:
+      - create_engine(request.
+      - URL.create(host=request.
+    suggestion: "Never construct database connection strings from user-supplied data"

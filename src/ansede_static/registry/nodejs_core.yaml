@@ -1,0 +1,140 @@
+language: javascript
+framework: nodejs_core
+version: "1.0"
+description: "Node.js core module security rules: child_process, fs, crypto, and http"
+rules:
+  - id: registry/nodejs/cmd/exec-shell
+    title: "Command Injection via child_process.exec with user data"
+    cwe: CWE-78
+    severity: critical
+    pattern_type: taint_sink
+    sinks:
+      - exec(req.query.
+      - exec(req.body.
+      - exec(`${req.
+      - exec(userInput
+    suggestion: "Use execFile with an array of arguments: execFile('cmd', [arg1, arg2])"
+
+  - id: registry/nodejs/cmd/spawn-shell
+    title: "Command Injection via spawn with shell: true"
+    cwe: CWE-78
+    severity: critical
+    pattern_type: regex
+    regex: "spawn\\([^)]*,\\s*\\{[^}]*shell\\s*:\\s*true"
+    suggestion: "Remove shell: true; pass arguments as an array to spawn()"
+
+  - id: registry/nodejs/path/fs-user-path
+    title: "Path Traversal via fs.readFile with user-controlled path"
+    cwe: CWE-22
+    severity: critical
+    pattern_type: taint_sink
+    sinks:
+      - fs.readFile(req.query.
+      - fs.readFileSync(req.query.
+      - fs.readFile(req.params.
+      - fs.readFile(userPath
+    suggestion: "Use path.resolve and verify the result starts with the allowed base directory"
+
+  - id: registry/nodejs/path/fs-write-user
+    title: "Path Traversal via fs.writeFile with user path"
+    cwe: CWE-22
+    severity: critical
+    pattern_type: taint_sink
+    sinks:
+      - fs.writeFile(req.body.path
+      - fs.writeFileSync(req.params.
+    suggestion: "Validate and normalize file paths; restrict to a safe base directory"
+
+  - id: registry/nodejs/eval/user-code
+    title: "Code Injection via eval with user data"
+    cwe: CWE-94
+    severity: critical
+    pattern_type: taint_sink
+    sinks:
+      - eval(req.body.
+      - eval(req.query.
+      - new Function(req.body.
+    suggestion: "Never evaluate user-controlled strings as code"
+
+  - id: registry/nodejs/module/require-user
+    title: "Code Injection via require() with user-controlled module"
+    cwe: CWE-94
+    severity: critical
+    pattern_type: taint_sink
+    sinks:
+      - require(req.query.
+      - require(req.body.module
+      - require(userModule
+    suggestion: "Never dynamically require modules with user-controlled paths"
+
+  - id: registry/nodejs/crypto/md5-hash
+    title: "MD5 used for security-sensitive hashing"
+    cwe: CWE-328
+    severity: high
+    pattern_type: taint_sink
+    sinks:
+      - crypto.createHash('md5')
+      - crypto.createHash("md5")
+    suggestion: "Use crypto.createHash('sha256') or bcrypt for password hashing"
+
+  - id: registry/nodejs/crypto/sha1-hash
+    title: "SHA-1 used for security-sensitive hashing"
+    cwe: CWE-328
+    severity: medium
+    pattern_type: taint_sink
+    sinks:
+      - crypto.createHash('sha1')
+      - crypto.createHash("sha1")
+    suggestion: "Use SHA-256 or stronger for security purposes"
+
+  - id: registry/nodejs/ssrf/http-request-user
+    title: "SSRF via http.request/https.request with user URL"
+    cwe: CWE-918
+    severity: high
+    pattern_type: taint_sink
+    sinks:
+      - http.request(req.query.url
+      - https.request(req.query.url
+      - http.get(req.body.url
+    suggestion: "Validate URLs against an allowlist before making outbound requests"
+
+  - id: registry/nodejs/path/send-file-user
+    title: "Path Traversal via res.sendFile with user-controlled path"
+    cwe: CWE-22
+    severity: critical
+    pattern_type: taint_sink
+    sinks:
+      - res.sendFile(req.query.file
+      - res.sendFile(req.params.
+    suggestion: "Use path.join and verify the path starts with __dirname"
+
+  - id: registry/nodejs/dns/rebinding
+    title: "DNS Rebinding risk via hostname from user input"
+    cwe: CWE-350
+    severity: medium
+    pattern_type: taint_sink
+    sinks:
+      - dns.lookup(req.query.host
+      - dns.resolve(req.body.hostname
+    suggestion: "Validate hostnames; block private IP ranges after DNS resolution"
+
+  - id: registry/nodejs/vm/run-user
+    title: "Code Injection via vm.runInNewContext with user code"
+    cwe: CWE-94
+    severity: critical
+    pattern_type: taint_sink
+    sinks:
+      - vm.runInNewContext(req.
+      - vm.runInThisContext(req.
+      - vm.Script(req.
+    suggestion: "vm.runInNewContext does not provide a security sandbox; never use with user data"
+
+  - id: registry/nodejs/env/secrets-in-response
+    title: "Environment secrets reflected in API response"
+    cwe: CWE-200
+    severity: critical
+    pattern_type: taint_sink
+    sinks:
+      - res.json(process.env
+      - res.send(JSON.stringify(process.env
+    suggestion: "Never expose process.env in API responses"

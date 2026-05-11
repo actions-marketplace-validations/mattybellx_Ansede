@@ -1,0 +1,106 @@
+language: javascript
+framework: axios_js
+version: "1.0"
+description: "Axios HTTP client security rules"
+rules:
+  - id: registry/axios/ssrf/get-user-url
+    title: "SSRF via axios.get() with user-controlled URL"
+    cwe: CWE-918
+    severity: high
+    pattern_type: taint_sink
+    sinks:
+      - axios.get(req.query.url
+      - axios.get(req.body.url
+      - axios.get(params.url
+    suggestion: "Validate URLs against an allowlist before making outbound requests"
+
+  - id: registry/axios/ssrf/post-user-url
+    title: "SSRF via axios.post() with user-controlled URL"
+    cwe: CWE-918
+    severity: high
+    pattern_type: taint_sink
+    sinks:
+      - axios.post(req.query.url
+      - axios.post(req.body.url
+    suggestion: "Validate URLs against an allowlist before making outbound requests"
+
+  - id: registry/axios/ssrf/request-user-url
+    title: "SSRF via axios.request() with user-controlled URL"
+    cwe: CWE-918
+    severity: high
+    pattern_type: taint_sink
+    sinks:
+      - axios.request({ url: req.
+      - axios({ url: req.query.
+    suggestion: "Validate and restrict outbound URLs to trusted destinations"
+
+  - id: registry/axios/tls/reject-unauthorized-false
+    title: "TLS certificate validation disabled in axios"
+    cwe: CWE-295
+    severity: critical
+    pattern_type: regex
+    regex: "rejectUnauthorized\\s*:\\s*false"
+    suggestion: "Keep rejectUnauthorized: true (default); use proper CA certs in non-prod"
+
+  - id: registry/axios/auth/hardcoded-auth-header
+    title: "Hardcoded Authorization header in axios defaults"
+    cwe: CWE-798
+    severity: critical
+    pattern_type: regex
+    regex: "axios\\.defaults\\.headers\\.common\\[['\"]Authorization['\"]\\]\\s*=\\s*['\"][^'\"]{8,}['\"]"
+    suggestion: "Load API tokens from environment variables"
+
+  - id: registry/axios/csrf/missing-token
+    title: "Axios POST without CSRF token for same-origin requests"
+    cwe: CWE-352
+    severity: medium
+    pattern_type: regex
+    regex: "axios\\.post\\(['\"][^'\"]+['\"],(?!.*csrf|.*xsrf)"
+    suggestion: "Include CSRF token in POST requests: axios.defaults.headers.common['X-CSRF-Token'] = token"
+
+  - id: registry/axios/baseurl/user-controlled
+    title: "Axios baseURL set from user input"
+    cwe: CWE-918
+    severity: critical
+    pattern_type: taint_sink
+    sinks:
+      - axios.create({ baseURL: req.
+      - axios.defaults.baseURL = req.
+    suggestion: "Never set baseURL from user input; use a hardcoded or environment-configured URL"
+
+  - id: registry/axios/ssrf/redirect-follow
+    title: "Axios following redirects to internal services"
+    cwe: CWE-918
+    severity: medium
+    pattern_type: regex
+    regex: "maxRedirects\\s*:\\s*(?:[1-9][0-9]|[5-9])"
+    suggestion: "Set maxRedirects: 0 for server-side requests to prevent SSRF via redirect chains"
+
+  - id: registry/axios/response/log-sensitive
+    title: "Axios response body logged (may contain sensitive data)"
+    cwe: CWE-532
+    severity: medium
+    pattern_type: taint_sink
+    sinks:
+      - console.log(response.data
+      - logger.info(res.data
+    suggestion: "Avoid logging full response bodies; redact sensitive fields before logging"
+
+  - id: registry/axios/timeout/missing
+    title: "Axios request without timeout configured"
+    cwe: CWE-400
+    severity: medium
+    pattern_type: regex
+    regex: "axios\\.(?:get|post|put|delete)\\([^)]*\\)(?!.*timeout)"
+    suggestion: "Set timeout: axios.get(url, { timeout: 5000 })"
+
+  - id: registry/axios/credentials/password-in-params
+    title: "Credentials passed as URL parameters via axios"
+    cwe: CWE-598
+    severity: high
+    pattern_type: taint_sink
+    sinks:
+      - params: { password:
+      - params: { token:
+      - params: { api_key:
+    suggestion: "Pass credentials in Authorization header, not URL parameters"

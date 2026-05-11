@@ -1,0 +1,229 @@
+language: python
+framework: requests_lib
+version: "1.0"
+description: "requests and httpx security rules: SSRF, TLS bypass, credential exposure, and response handling"
+rules:
+  - id: registry/requests/ssrf/get-user-url
+    title: "SSRF via requests.get with user-controlled URL"
+    cwe: CWE-918
+    severity: high
+    pattern_type: taint_sink
+    sinks:
+      - requests.get(url=
+      - requests.get(user_
+      - requests.get(request.
+      - requests.get(params.get(
+    suggestion: "Validate URLs against an allowlist; block private IP ranges (RFC 1918)"
+
+  - id: registry/requests/ssrf/post-user-url
+    title: "SSRF via requests.post with user-controlled URL"
+    cwe: CWE-918
+    severity: high
+    pattern_type: taint_sink
+    sinks:
+      - requests.post(url=
+      - requests.post(user_
+      - requests.post(request.
+    suggestion: "Validate URLs against an allowlist before making outbound requests"
+
+  - id: registry/requests/ssrf/session-get
+    title: "SSRF via requests.Session.get with user URL"
+    cwe: CWE-918
+    severity: high
+    pattern_type: taint_sink
+    sinks:
+      - session.get(url=
+      - session.get(user_
+      - session.post(url=
+    suggestion: "Mount a transport adapter that enforces URL allowlisting"
+
+  - id: registry/requests/tls/verify-false
+    title: "TLS verification disabled in requests"
+    cwe: CWE-295
+    severity: high
+    pattern_type: taint_sink
+    sinks:
+      - requests.get(verify=False
+      - requests.post(verify=False
+      - requests.put(verify=False
+      - requests.delete(verify=False
+      - requests.request(verify=False
+      - session.get(verify=False
+      - session.verify = False
+    suggestion: "Never set verify=False in production; use a trusted CA bundle"
+
+  - id: registry/requests/tls/httpx-verify-false
+    title: "TLS verification disabled in httpx"
+    cwe: CWE-295
+    severity: high
+    pattern_type: taint_sink
+    sinks:
+      - httpx.get(verify=False
+      - httpx.post(verify=False
+      - httpx.AsyncClient(verify=False
+      - httpx.Client(verify=False
+    suggestion: "Keep verify=True (default); supply a custom CA bundle if needed"
+
+  - id: registry/requests/auth/basic-clear-text
+    title: "Basic auth credentials in URL"
+    cwe: CWE-319
+    severity: high
+    pattern_type: regex
+    regex: "https?://[^:\"']+:[^@\"']+@"
+    suggestion: "Use requests.auth.HTTPBasicAuth and pass credentials securely"
+
+  - id: registry/requests/auth/hardcoded-api-key
+    title: "Hardcoded API key in requests header"
+    cwe: CWE-798
+    severity: critical
+    pattern_type: regex
+    regex: "headers\\s*=\\s*\\{.*(?:Authorization|X-Api-Key|api[-_]key).*:\\s*['\"][A-Za-z0-9+/]{16,}['\"]"
+    suggestion: "Load API keys from environment variables or secrets manager"
+
+  - id: registry/requests/redirect/follow-redirects-unsafe
+    title: "Open Redirect via requests following user-controlled URL"
+    cwe: CWE-601
+    severity: medium
+    pattern_type: taint_sink
+    sinks:
+      - allow_redirects=True
+    suggestion: "Set allow_redirects=False and validate redirect locations explicitly"
+
+  - id: registry/requests/timeout/missing-timeout
+    title: "HTTP request without timeout (DoS risk)"
+    cwe: CWE-400
+    severity: medium
+    pattern_type: regex
+    regex: "requests\\.(?:get|post|put|delete|patch|head)\\((?!.*timeout)"
+    suggestion: "Always set timeout=(connect, read) to prevent hanging connections"
+
+  - id: registry/requests/response/json-injection
+    title: "Response JSON reflected directly to client"
+    cwe: CWE-918
+    severity: medium
+    pattern_type: taint_sink
+    sinks:
+      - return response.json()
+      - return r.json()
+    suggestion: "Validate and schema-check external API responses before forwarding them"
+
+  - id: registry/requests/cert/client-cert-exposed
+    title: "Client certificate path hardcoded"
+    cwe: CWE-798
+    severity: high
+    pattern_type: regex
+    regex: "cert\\s*=\\s*['\"](?:/[a-zA-Z0-9_./]+\\.pem|/[a-zA-Z0-9_./]+\\.crt)['\"]"
+    suggestion: "Load certificate paths from environment variables"
+
+  - id: registry/requests/ssrf/url-from-env
+    title: "SSRF risk: URL built from environment variable"
+    cwe: CWE-918
+    severity: medium
+    pattern_type: taint_sink
+    sinks:
+      - requests.get(os.environ.get(
+      - requests.get(os.getenv(
+    suggestion: "Validate URLs from environment against an allowlist"
+
+  - id: registry/requests/logging/response-body-log
+    title: "Full HTTP response body logged (may contain secrets)"
+    cwe: CWE-532
+    severity: medium
+    pattern_type: taint_sink
+    sinks:
+      - logger.debug(response.text
+      - logger.info(response.text
+      - print(response.text
+    suggestion: "Summarise or mask sensitive fields before logging response bodies"
+
+  - id: registry/requests/tls/custom-adapter-no-verify
+    title: "Custom HTTPAdapter disables TLS verification"
+    cwe: CWE-295
+    severity: critical
+    pattern_type: regex
+    regex: "ssl\\.CERT_NONE|CERT_REQUIRED\\s*=\\s*False"
+    suggestion: "Use ssl.CERT_REQUIRED and a trusted CA bundle"
+
+  - id: registry/requests/ssrf/aiohttp-get-user-url
+    title: "SSRF via aiohttp ClientSession.get with user URL"
+    cwe: CWE-918
+    severity: high
+    pattern_type: taint_sink
+    sinks:
+      - await session.get(url=
+      - await session.get(user_
+      - await session.post(url=
+      - await aiohttp.ClientSession().get(
+    suggestion: "Validate URLs against an allowlist before making async requests"
+
+  - id: registry/requests/tls/aiohttp-ssl-false
+    title: "TLS verification disabled in aiohttp"
+    cwe: CWE-295
+    severity: high
+    pattern_type: taint_sink
+    sinks:
+      - ssl=False
+      - verify_ssl=False
+      - connector=aiohttp.TCPConnector(ssl=False
+    suggestion: "Keep SSL verification enabled; use ssl.create_default_context()"
+
+  - id: registry/requests/auth/bearer-in-url
+    title: "Bearer token passed in URL query string"
+    cwe: CWE-598
+    severity: high
+    pattern_type: regex
+    regex: "params\\s*=\\s*\\{.*['\"](?:token|access_token|bearer)['\"]\\s*:"
+    suggestion: "Pass tokens in Authorization headers, not URL parameters"
+
+  - id: registry/requests/proxy/user-controlled
+    title: "SSRF via user-controlled proxy setting"
+    cwe: CWE-918
+    severity: critical
+    pattern_type: taint_sink
+    sinks:
+      - proxies={'http': user_
+      - proxies={"http": user_
+      - proxies={'https': request.
+    suggestion: "Never allow user-supplied proxy URLs"
+
+  - id: registry/requests/ssrf/urllib-urlopen
+    title: "SSRF via urllib.request.urlopen with user URL"
+    cwe: CWE-918
+    severity: high
+    pattern_type: taint_sink
+    sinks:
+      - urllib.request.urlopen(user_
+      - urllib.request.urlopen(request.
+      - urlopen(user_
+      - urlopen(request.
+    suggestion: "Validate URLs against an allowlist; use requests with a URL validator"
+
+  - id: registry/requests/ssrf/urllib2
+    title: "SSRF via urllib2.urlopen (Python 2 legacy)"
+    cwe: CWE-918
+    severity: high
+    pattern_type: taint_sink
+    sinks:
+      - urllib2.urlopen(
+      - urllib2.Request(
+    suggestion: "Upgrade to Python 3 urllib or requests with URL validation"
+
+  - id: registry/requests/credential/password-in-params
+    title: "Password transmitted as URL query parameter"
+    cwe: CWE-598
+    severity: critical
+    pattern_type: taint_sink
+    sinks:
+      - params={'password': 
+      - params={"password":
+    suggestion: "Send credentials in the request body over HTTPS, never in URL params"
+
+  - id: registry/requests/ssrf/dns-rebinding
+    title: "SSRF risk: DNS rebinding not mitigated"
+    cwe: CWE-918
+    severity: medium
+    pattern_type: taint_sink
+    sinks:
+      - requests.get(host=
+      - requests.get(hostname=
+    suggestion: "Resolve and validate IP addresses after DNS lookup to prevent rebinding attacks"

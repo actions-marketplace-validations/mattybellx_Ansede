@@ -1,0 +1,93 @@
+language: javascript
+framework: typeorm_js
+version: "1.0"
+description: "TypeORM security rules"
+rules:
+  - id: registry/typeorm/sqli/querybuilder-raw-where
+    title: "SQL Injection via createQueryBuilder().where() with template string"
+    cwe: CWE-89
+    severity: critical
+    pattern_type: taint_sink
+    sinks:
+      - .where(`
+      - .andWhere(`
+      - .orWhere(`
+    suggestion: "Use parameterized where: .where('user.id = :id', { id })"
+
+  - id: registry/typeorm/sqli/query-raw
+    title: "SQL Injection via EntityManager.query() with user string"
+    cwe: CWE-89
+    severity: critical
+    pattern_type: taint_sink
+    sinks:
+      - manager.query(`SELECT
+      - connection.query(`SELECT
+      - dataSource.query(`
+    suggestion: "Use parameterized queries: manager.query('SELECT ... WHERE id = $1', [id])"
+
+  - id: registry/typeorm/sqli/orderby-user
+    title: "SQL Injection via orderBy with user-controlled column"
+    cwe: CWE-89
+    severity: high
+    pattern_type: taint_sink
+    sinks:
+      - .orderBy(req.query.
+      - .orderBy(req.body.
+    suggestion: "Validate column names against an allowlist before using in orderBy"
+
+  - id: registry/typeorm/idor/find-no-auth
+    title: "IDOR via repository.findOne without authorization scope"
+    cwe: CWE-639
+    severity: high
+    pattern_type: taint_sink
+    sinks:
+      - repository.findOne({ where: { id: req.params.
+      - userRepo.findOneBy({ id: parseInt(req.
+    suggestion: "Include userId in the where clause to enforce ownership"
+
+  - id: registry/typeorm/mass-assignment/save-body
+    title: "Mass Assignment via repository.save(req.body)"
+    cwe: CWE-915
+    severity: high
+    pattern_type: taint_sink
+    sinks:
+      - repository.save(req.body
+      - manager.save(req.body
+    suggestion: "Create entity explicitly with allowed fields; never save req.body directly"
+
+  - id: registry/typeorm/sqli/getmany-no-scope
+    title: "TypeORM getMany without authorization scope"
+    cwe: CWE-639
+    severity: high
+    pattern_type: regex
+    regex: "\\.getMany\\(\\)(?!.*userId)"
+    suggestion: "Add a where clause to restrict results to the authenticated user"
+
+  - id: registry/typeorm/credentials/hardcoded
+    title: "Database credentials hardcoded in TypeORM DataSource"
+    cwe: CWE-798
+    severity: critical
+    pattern_type: regex
+    regex: "new DataSource\\(\\{[^}]*password\\s*:\\s*['\"][^'\"]{1,64}['\"]"
+    suggestion: "Load credentials from environment: password: process.env.DB_PASSWORD"
+
+  - id: registry/typeorm/sqli/raw-expression
+    title: "SQL Injection via Raw() expression with user data"
+    cwe: CWE-89
+    severity: critical
+    pattern_type: taint_sink
+    sinks:
+      - Raw(req.query.
+      - Raw(`
+      - Raw(alias =>
+    suggestion: "Use TypeORM operators (Like, Between) instead of Raw with user data"
+
+  - id: registry/typeorm/sqli/select-raw
+    title: "SQL Injection via .select() with user-controlled column list"
+    cwe: CWE-89
+    severity: high
+    pattern_type: taint_sink
+    sinks:
+      - .select(req.query.fields
+      - .select([req.body.
+    suggestion: "Validate column names against an allowlist before using in .select()"

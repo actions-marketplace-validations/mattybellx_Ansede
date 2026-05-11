@@ -11,11 +11,9 @@ from __future__ import annotations
 
 import logging
 import re
-from pathlib import Path
+from typing import Any
 
 _log = logging.getLogger(__name__)
-
-_REGISTRY_DIR = Path(__file__).resolve().parent
 
 _FRAMEWORK_MARKERS: list[tuple[re.Pattern[str], str]] = [
     (re.compile(r'import\s+django\b|from\s+django\b|INSTALLED_APPS|DJANGO_SETTINGS', re.IGNORECASE), "django"),
@@ -36,7 +34,39 @@ _FRAMEWORK_MARKERS: list[tuple[re.Pattern[str], str]] = [
     (re.compile(r"subprocess\.(?:run|Popen|call|check_output)", re.IGNORECASE), "subprocess_lib"),
 ]
 
+_PACK_LANGUAGE_HINTS: dict[str, str] = {
+    "django": "python",
+    "flask": "python",
+    "fastapi": "python",
+    "boto3_aws": "python",
+    "sqlalchemy": "python",
+    "pydantic": "python",
+    "celery": "python",
+    "yaml_load": "python",
+    "xml_parsers": "python",
+    "subprocess_lib": "python",
+    "express_js": "javascript",
+    "nestjs_framework": "javascript",
+    "react_frontend": "javascript",
+    "mongoose_js": "javascript",
+    "sequelize_orm": "javascript",
+    "axios_js": "javascript",
+}
+
 _loaded_packs: dict[str, list[dict]] = {}
+
+
+def _normalize_language(language: str) -> str:
+    text = language.strip().lower()
+    if text in {"js", "jsx", "ts", "tsx", "typescript", "javascript"}:
+        return "javascript"
+    if text in {"py", "python"}:
+        return "python"
+    if text in {"cs", "c#", "csharp"}:
+        return "csharp"
+    if text in {"golang", "go"}:
+        return "go"
+    return text
 
 
 def detect_frameworks(code: str) -> list[str]:
@@ -49,34 +79,58 @@ def detect_frameworks(code: str) -> list[str]:
     return detected
 
 
+def load_custom_rules_for_code(code: str, language: str) -> list[Any]:
+    """Load registry custom-rule objects for a source/language pair.
+
+    This is the canonical bridge used by runtime scanning paths.
+    """
+    try:
+        from ansede_static.registry.loader import load_packs_for_source
+
+        return list(load_packs_for_source(code, _normalize_language(language)))
+    except Exception as exc:
+        _log.debug("Sharded custom-rule load failed: %s", exc)
+        return []
+
+
 def load_pack(pack_name: str) -> list[dict]:
     """Load a rule pack, caching the result."""
     if pack_name in _loaded_packs:
         return _loaded_packs[pack_name]
 
-    pack_path = _REGISTRY_DIR / f"{pack_name}.yaml"
-    if not pack_path.exists():
-        pack_path = _REGISTRY_DIR / f"{pack_name}.yml"
+    try:
+        from ansede_static.registry.loader import load_packs_for_source
+        from ansede_static.yaml_rules import CustomRule
+
+        rules = load_packs_for_source(f"import {pack_name}\n", _PACK_LANGUAGE_HINTS.get(pack_name, "python"))
+        normalized: list[dict] = []
+        for rule in rules:
+            if isinstance(rule, CustomRule):
+                normalized.append({
+                    "id": rule.rule_id,
+                    "title": rule.title,
+                    "cwe": rule.cwe,
+                    "pattern_type": rule.pattern_type,
+                    "languages": list(rule.languages),
+                })
+            elif isinstance(rule, dict):
+                normalized.append(rule)
+        _loaded_packs[pack_name] = normalized
+        _log.debug("Loaded %d rules from %s pack", len(normalized), pack_name)
+        return normalized
+    except Exception:
+        pass
+
+    pack_path = _REGISTRY_DIR / f"{pack_name}.json"
     if not pack_path.exists():
         _loaded_packs[pack_name] = []
         return []
-
     try:
-        import yaml
-        with open(pack_path, encoding="utf-8") as f:
-            data = yaml.safe_load(f)
+        import json
+        data = json.loads(pack_path.read_text(encoding="utf-8"))
     except Exception:
-        try:
-            import json
-            json_path = _REGISTRY_DIR / f"{pack_name}.json"
-            if json_path.exists():
-                data = json.loads(json_path.read_text(encoding="utf-8"))
-            else:
-                _loaded_packs[pack_name] = []
-                return []
-        except Exception:
-            _loaded_packs[pack_name] = []
-            return []
+        _loaded_packs[pack_name] = []
+        return []
 
     rules = data.get("rules", []) if isinstance(data, dict) else (data if isinstance(data, list) else [])
     _loaded_packs[pack_name] = rules
@@ -84,8 +138,31 @@ def load_pack(pack_name: str) -> list[dict]:
     return rules
 
 
-def load_rules_for_code(code: str) -> list[dict]:
-    """Auto-detect frameworks and load matching rule packs."""
+def load_rules_for_code(code: str, language: str | None = None) -> list[dict]:
+    """Auto-detect frameworks and load matching normalized rule dicts.
+
+    Backward-compatible adapter used by existing tests and diagnostics.
+    """
+    if language:
+        rules = load_custom_rules_for_code(code, language)
+        normalized: list[dict] = []
+        try:
+            from ansede_static.yaml_rules import CustomRule
+        except Exception:
+            CustomRule = None  # type: ignore[assignment]
+        for rule in rules:
+            if CustomRule is not None and isinstance(rule, CustomRule):
+                normalized.append({
+                    "id": rule.rule_id,
+                    "title": rule.title,
+                    "cwe": rule.cwe,
+                    "pattern_type": rule.pattern_type,
+                    "languages": list(rule.languages),
+                })
+            elif isinstance(rule, dict):
+                normalized.append(rule)
+        return normalized
+
     frameworks = detect_frameworks(code)
     all_rules: list[dict] = []
     for fw in frameworks:

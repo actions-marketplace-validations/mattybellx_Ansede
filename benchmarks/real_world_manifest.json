@@ -160,18 +160,33 @@
       "notes": "Pinned NodeGoat shared config hardcodes cookie and crypto secrets instead of sourcing them from environment or a secret store."
     },
     {
-      "case_id": "django-gdal-raster-clone-path-traversal",
+      "case_id": "nodegoat-index-missing-csrf-protection",
+      "source": {
+        "kind": "git",
+        "repo": "https://github.com/OWASP/NodeGoat.git",
+        "ref": "c5cb68a7084e4ae7dcc60e6a98768720a81841e8",
+        "subdir": "app/routes"
+      },
+      "language": "javascript",
+      "targets": ["index.js"],
+      "js_backend": "structural",
+      "expected_cwes": ["CWE-352"],
+      "expected_rule_ids": ["JS-041", "JS-060"],
+      "notes": "Pinned NodeGoat route file defines multiple state-changing auth/account routes with no detectable CSRF token validation middleware."
+    },
+    {
+      "case_id": "django-i18n-open-redirect",
       "source": {
         "kind": "git",
         "repo": "https://github.com/django/django.git",
         "ref": "8c8b833d32c02d3ae6f43b04bb1e45968796b402",
-        "subdir": "django/contrib/gis/gdal/raster"
+        "subdir": "django/views"
       },
       "language": "python",
-      "targets": ["source.py"],
-      "expected_cwes": ["CWE-22"],
-      "expected_rule_ids": ["PY-023"],
-      "notes": "Pinned Django GDAL raster clone helper composes a virtual filesystem clone path with os.path.join() on dynamic input inside clone()."
+      "targets": ["i18n.py"],
+      "expected_cwes": ["CWE-601"],
+      "expected_rule_ids": ["PY-046"],
+      "notes": "Pinned Django i18n view contains user-influenced redirect flows in set_language that should be constrained to allowed hosts/schemes."
     }
   ]
 }

@@ -1454,8 +1454,8 @@ app.get('/stream', (req, res) => {
         assert _has_cwe(code, "CWE-22")
 
     def test_sendfile_with_path_resolve_guard_safe(self):
-        # When path.resolve is used with a guard, the checker should NOT fire
-        # (the pattern excludes lines where the arg is a plain string literal)
+        # A resolved path that is checked against a fixed base dir should
+        # suppress path traversal findings.
         code = """
 const BASE = '/var/uploads';
 app.get('/download', (req, res) => {
@@ -1464,10 +1464,7 @@ app.get('/download', (req, res) => {
   res.sendFile(safe);
 });
 """
-        # This one may still trigger (sendFile with non-literal), but the guard
-        # comment is there — just assert no crash
-        result = analyze_js(code)
-        assert isinstance(result.findings, list)
+        assert not _has_cwe(code, "CWE-22")
 
 
 # ── CWE-1321: Prototype pollution — deep merge libs (JS context) ─────────────

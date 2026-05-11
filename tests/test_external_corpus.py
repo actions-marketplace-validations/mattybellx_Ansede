@@ -8,6 +8,7 @@ import subprocess
 
 import pytest
 
+import benchmarks.external_corpus as external_corpus
 from benchmarks.external_corpus import OfflineCacheMissError, load_manifest, run_external_corpus
 
 
@@ -87,7 +88,8 @@ def test_load_real_world_manifest_has_curated_git_entries():
         "nodegoat-eval-code-injection",
         "nodegoat-hardcoded-zap-api-key",
         "nodegoat-hardcoded-cookie-and-crypto-secrets",
-        "django-gdal-raster-clone-path-traversal",
+        "nodegoat-index-missing-csrf-protection",
+        "django-i18n-open-redirect",
         "webgoat-full-repo",
         "nodegoat-full-repo",
         "flask-login-full-repo",
@@ -103,7 +105,7 @@ def test_load_real_world_manifest_has_curated_git_entries():
     }
     assert all(len(entry.source.ref) == 40 for entry in manifest.entries)
     assert all(entry.js_backend == "structural" for entry in manifest.entries if entry.language == "javascript")
-    assert any(entry.language == "python" and entry.expected_rule_ids == ("PY-023",) for entry in manifest.entries)
+    assert any(entry.language == "python" and entry.expected_rule_ids == ("PY-046",) for entry in manifest.entries)
     assert any(entry.case_id == "webgoat-full-repo" and entry.languages == ("java",) for entry in manifest.entries)
     assert any(entry.case_id == "dvna-full-repo" and entry.exclude_paths == ("node_modules/", "test/") for entry in manifest.entries)
     assert any(entry.case_id == "flask-login-full-repo" and entry.expected_findings.min == 3 and entry.expected_findings.max == 7 for entry in manifest.entries)
@@ -289,3 +291,23 @@ def test_external_corpus_reports_noise_gate(tmp_path):
     assert report["summary"]["noise_quotient"] > 0.5
     assert report["noise_gate"]["passed"] is False
     assert report["noise_gate"]["failures"][0]["case_id"] == "git-python-admin-vuln"
+
+
+def test_external_corpus_run_git_enables_core_longpaths_on_windows(monkeypatch):
+    captured: dict[str, object] = {}
+
+    class _Completed:
+        stdout = "ok\n"
+
+    def _fake_run(cmd, **kwargs):
+        captured["cmd"] = cmd
+        captured["kwargs"] = kwargs
+        return _Completed()
+
+    monkeypatch.setattr(external_corpus.os, "name", "nt", raising=False)
+    monkeypatch.setattr(external_corpus.subprocess, "run", _fake_run)
+
+    result = external_corpus._run_git(["rev-parse", "HEAD"], cwd=Path("."))
+
+    assert result == "ok"
+    assert captured["cmd"] == ["git", "-c", "core.longpaths=true", "rev-parse", "HEAD"]

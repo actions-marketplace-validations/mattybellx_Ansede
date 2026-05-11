@@ -1,0 +1,153 @@
+language: python
+framework: yaml_load
+version: "1.0"
+description: "YAML/TOML/config deserialization security rules"
+rules:
+  - id: registry/yaml/deserialization/unsafe-load
+    title: "Unsafe Deserialization via yaml.load()"
+    cwe: CWE-502
+    severity: critical
+    pattern_type: taint_sink
+    sinks:
+      - yaml.load(
+      - yaml.load_all(
+    suggestion: "Use yaml.safe_load() or yaml.safe_load_all()"
+
+  - id: registry/yaml/deserialization/unsafe-loader
+    title: "yaml.load with Loader=yaml.Loader (unsafe)"
+    cwe: CWE-502
+    severity: critical
+    pattern_type: regex
+    regex: "yaml\\.load\\(.*Loader\\s*=\\s*yaml\\.(?:Loader|UnsafeLoader|FullLoader)"
+    suggestion: "Use Loader=yaml.SafeLoader or call yaml.safe_load()"
+
+  - id: registry/yaml/deserialization/ruamel-unsafe
+    title: "ruamel.yaml loaded without safety restrictions"
+    cwe: CWE-502
+    severity: critical
+    pattern_type: taint_sink
+    sinks:
+      - YAML(typ='unsafe')
+      - YAML(typ="unsafe")
+      - ruamel.yaml.YAML(typ='unsafe'
+    suggestion: "Use YAML(typ='safe') for user-provided YAML content"
+
+  - id: registry/yaml/injection/format-yaml
+    title: "YAML template injection via string formatting"
+    cwe: CWE-94
+    severity: critical
+    pattern_type: taint_sink
+    sinks:
+      - yaml.safe_load(f"
+      - yaml.safe_load(template.format(
+    suggestion: "Never embed user data directly into YAML strings; use structured data instead"
+
+  - id: registry/yaml/deserialization/pickle-via-yaml
+    title: "Pickle payload embedded in YAML"
+    cwe: CWE-502
+    severity: critical
+    pattern_type: regex
+    regex: "!!python/object/apply:|!!python/object:"
+    suggestion: "Block all YAML containing Python tags; use SafeLoader"
+
+  - id: registry/yaml/config/env-expansion
+    title: "YAML with environment variable expansion"
+    cwe: CWE-94
+    severity: medium
+    pattern_type: regex
+    regex: "\\$\\{[A-Z_]+\\}"
+    suggestion: "Validate YAML configs against a schema before applying env var expansion"
+
+  - id: registry/yaml/deserialization/json-schema-bypass
+    title: "JSON deserialization without schema validation"
+    cwe: CWE-20
+    severity: medium
+    pattern_type: taint_sink
+    sinks:
+      - json.loads(user_
+      - json.loads(request.
+      - json.loads(data
+    suggestion: "Validate JSON with jsonschema.validate() or a Pydantic model"
+
+  - id: registry/yaml/toml/loads-user
+    title: "TOML deserialization with user-controlled string"
+    cwe: CWE-20
+    severity: medium
+    pattern_type: taint_sink
+    sinks:
+      - toml.loads(user_
+      - toml.loads(request.
+      - tomli.loads(user_
+    suggestion: "Only load TOML from trusted configuration files; validate structure afterwards"
+
+  - id: registry/yaml/ini/configparser-user
+    title: "ConfigParser loading user-controlled INI content"
+    cwe: CWE-20
+    severity: medium
+    pattern_type: taint_sink
+    sinks:
+      - config.read_string(user_
+      - config.read_string(request.
+    suggestion: "Validate INI content structure; restrict allowed sections and keys"
+
+  - id: registry/yaml/deserialization/msgpack-user
+    title: "Unsafe msgpack deserialization with raw=True"
+    cwe: CWE-502
+    severity: high
+    pattern_type: taint_sink
+    sinks:
+      - msgpack.unpackb(user_
+      - msgpack.loads(user_
+      - msgpack.unpack(user_
+    suggestion: "Use msgpack.unpackb(data, raw=False, strict_map_key=True)"
+
+  - id: registry/yaml/deserialization/jsonpickle
+    title: "Unsafe Deserialization via jsonpickle.decode"
+    cwe: CWE-502
+    severity: critical
+    pattern_type: taint_sink
+    sinks:
+      - jsonpickle.decode(user_
+      - jsonpickle.decode(request.
+    suggestion: "Never use jsonpickle.decode with untrusted input; use json.loads with a schema"
+
+  - id: registry/yaml/deserialization/shelve
+    title: "Unsafe object storage via shelve with user key"
+    cwe: CWE-502
+    severity: critical
+    pattern_type: taint_sink
+    sinks:
+      - shelve.open(user_
+      - db[user_key]
+    suggestion: "shelve uses pickle internally; use a proper database for user-controlled data"
+
+  - id: registry/yaml/deserialization/dill
+    title: "Unsafe Deserialization via dill"
+    cwe: CWE-502
+    severity: critical
+    pattern_type: taint_sink
+    sinks:
+      - dill.loads(
+      - dill.load(
+    suggestion: "Never deserialize dill data from untrusted sources"
+
+  - id: registry/yaml/deserialization/cloudpickle
+    title: "Unsafe Deserialization via cloudpickle"
+    cwe: CWE-502
+    severity: critical
+    pattern_type: taint_sink
+    sinks:
+      - cloudpickle.loads(
+      - cloudpickle.load(
+    suggestion: "Never deserialize cloudpickle data from untrusted sources"
+
+  - id: registry/yaml/config/log-config-from-user
+    title: "Logging config loaded from user-controlled data"
+    cwe: CWE-20
+    severity: high
+    pattern_type: taint_sink
+    sinks:
+      - logging.config.dictConfig(user_
+      - logging.config.dictConfig(request.
+      - logging.config.fileConfig(user_
+    suggestion: "Only load logging configuration from trusted files or hardcoded dicts"

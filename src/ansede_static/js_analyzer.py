@@ -23,6 +23,7 @@ from ansede_static.js_engine.routes import run_route_checks
 from ansede_static.js_engine.structure import collect_calls, collect_property_writes
 from ansede_static.js_engine.taint import extract_taint_traces, trace_for_expr, trace_has_sanitizer
 from ansede_static.js_engine.taint_checks import run_taint_flow_checks
+from ansede_static.engine.symbolic_guards import analyze_guards_js
 
 _log = logging.getLogger(__name__)
 
@@ -153,6 +154,11 @@ def analyze_js(code: str, filename: str = "", global_graph: object | None = None
                     TraceFrame(kind="sink", label=f"template AST {node.kind}", line=node.line, start_column=node.column),
                 ),
             ))
+    except Exception:
+        pass
+
+    try:
+        all_findings = analyze_guards_js(code, all_findings, filename=filename)
     except Exception:
         pass
 

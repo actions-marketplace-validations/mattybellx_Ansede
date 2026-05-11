@@ -1,0 +1,404 @@
+language: python
+framework: fastapi
+version: "1.0"
+description: "FastAPI security sink rules: Depends chains, injection, SSRF, auth bypass, and serialization"
+rules:
+  - id: registry/fastapi/sqli/raw-sql-execute
+    title: "SQL Injection via database.execute with raw string"
+    cwe: CWE-89
+    severity: critical
+    pattern_type: taint_sink
+    sinks:
+      - await database.execute(
+      - db.execute(
+      - conn.execute(
+      - session.execute(
+    suggestion: "Use SQLAlchemy ORM or parameterized text() with bound params"
+
+  - id: registry/fastapi/sqli/asyncpg-fetch-raw
+    title: "SQL Injection via asyncpg fetch with raw string"
+    cwe: CWE-89
+    severity: critical
+    pattern_type: taint_sink
+    sinks:
+      - await conn.fetch(
+      - await conn.fetchrow(
+      - await conn.fetchval(
+      - await conn.execute(
+    suggestion: "Use $1/$2 placeholders in asyncpg: await conn.fetch('SELECT ... WHERE id=$1', id_val)"
+
+  - id: registry/fastapi/sqli/databases-fetch-raw
+    title: "SQL Injection via databases library with user data"
+    cwe: CWE-89
+    severity: critical
+    pattern_type: taint_sink
+    sinks:
+      - await databases.fetch_all(
+      - await databases.fetch_one(
+      - await databases.execute(
+    suggestion: "Use databases with parameterized queries"
+
+  - id: registry/fastapi/cmd/subprocess-request
+    title: "Command Injection via subprocess with request data"
+    cwe: CWE-78
+    severity: critical
+    pattern_type: taint_sink
+    sinks:
+      - subprocess.run(request.
+      - subprocess.call(request.
+      - subprocess.Popen(request.
+      - os.system(request.
+      - os.popen(request.
+    suggestion: "Use subprocess with a list of arguments and shell=False"
+
+  - id: registry/fastapi/ssrf/httpx-user-url
+    title: "SSRF via httpx.AsyncClient with user-controlled URL"
+    cwe: CWE-918
+    severity: high
+    pattern_type: taint_sink
+    sinks:
+      - await client.get(request.
+      - await client.post(request.
+      - httpx.get(request.
+      - httpx.AsyncClient().get(
+      - requests.get(request.
+    suggestion: "Validate URLs against an allowlist; block SSRF-prone IP ranges"
+
+  - id: registry/fastapi/path-traversal/file-open
+    title: "Path Traversal via open() with FastAPI query param"
+    cwe: CWE-22
+    severity: critical
+    pattern_type: taint_sink
+    sinks:
+      - open(request.query_params
+      - open(query_param
+      - FileResponse(request.query_params
+      - FileResponse(path_param
+    suggestion: "Use os.path.abspath(); validate against STATIC_DIR or a safe base path"
+
+  - id: registry/fastapi/path-traversal/fileresponse
+    title: "Path Traversal via FastAPI FileResponse with user path"
+    cwe: CWE-22
+    severity: critical
+    pattern_type: taint_sink
+    sinks:
+      - FileResponse(
+      - StaticFiles(directory=
+    suggestion: "Ensure FileResponse path is constructed from a trusted base directory only"
+
+  - id: registry/fastapi/deserialization/pickle-body
+    title: "Unsafe Deserialization via pickle of request body"
+    cwe: CWE-502
+    severity: critical
+    pattern_type: taint_sink
+    sinks:
+      - pickle.loads(await request.body(
+      - pickle.loads(body
+      - pickle.load(body
+    suggestion: "Use JSON with Pydantic models for request deserialization"
+
+  - id: registry/fastapi/deserialization/yaml-unsafe
+    title: "Unsafe YAML deserialization from request body"
+    cwe: CWE-502
+    severity: critical
+    pattern_type: taint_sink
+    sinks:
+      - yaml.load(await request.body(
+      - yaml.load(body
+      - yaml.load(data
+    suggestion: "Use yaml.safe_load() with a Pydantic model for validation"
+
+  - id: registry/fastapi/auth/missing-depends-security
+    title: "Missing authentication Depends in route"
+    cwe: CWE-306
+    severity: high
+    pattern_type: ast_structural
+    route_decorator: "@router.get("
+    missing_decorators:
+      - "Depends("
+      - "Security("
+    suggestion: "Add Depends(get_current_user) or Security(oauth2_scheme) to protected routes"
+
+  - id: registry/fastapi/auth/missing-depends-post
+    title: "POST route missing authentication Depends"
+    cwe: CWE-306
+    severity: high
+    pattern_type: ast_structural
+    route_decorator: "@router.post("
+    missing_decorators:
+      - "Depends("
+      - "Security("
+    suggestion: "Add Depends(get_current_user) to protect mutating endpoints"
+
+  - id: registry/fastapi/auth/jwt-algorithm-none
+    title: "JWT verification with algorithm='none'"
+    cwe: CWE-347
+    severity: critical
+    pattern_type: taint_sink
+    sinks:
+      - algorithms=['none']
+      - algorithms=["none"]
+      - algorithm='none'
+      - algorithm="none"
+    suggestion: "Always specify a strong algorithm such as 'HS256' or 'RS256'"
+
+  - id: registry/fastapi/auth/jwt-verify-false
+    title: "JWT signature verification disabled"
+    cwe: CWE-347
+    severity: critical
+    pattern_type: taint_sink
+    sinks:
+      - options={'verify_signature': False}
+      - verify_signature=False
+      - decode(token, options={'verify_signature': False}
+    suggestion: "Never disable JWT signature verification"
+
+  - id: registry/fastapi/auth/jwt-verify-exp-false
+    title: "JWT expiry check disabled"
+    cwe: CWE-613
+    severity: high
+    pattern_type: taint_sink
+    sinks:
+      - options={'verify_exp': False}
+      - verify_exp=False
+    suggestion: "Keep expiry verification enabled; issue short-lived tokens"
+
+  - id: registry/fastapi/auth/hardcoded-secret
+    title: "Hardcoded JWT SECRET_KEY"
+    cwe: CWE-798
+    severity: critical
+    pattern_type: regex
+    regex: "SECRET_KEY\\s*=\\s*['\"](?!os\\.environ)[^'\"]{1,32}['\"]"
+    suggestion: "Load SECRET_KEY from environment variables"
+
+  - id: registry/fastapi/xss/html-response
+    title: "XSS via HTMLResponse with user-controlled content"
+    cwe: CWE-79
+    severity: critical
+    pattern_type: taint_sink
+    sinks:
+      - HTMLResponse(content=request.
+      - HTMLResponse(request.
+      - HTMLResponse(f"
+    suggestion: "Escape user input with html.escape() before embedding in HTML responses"
+
+  - id: registry/fastapi/log/sensitive-in-log
+    title: "Sensitive data logged in FastAPI handler"
+    cwe: CWE-532
+    severity: medium
+    pattern_type: taint_sink
+    sinks:
+      - logger.debug(password
+      - logger.info(token
+      - logger.error(secret
+      - logging.info(password
+    suggestion: "Redact credentials before logging"
+
+  - id: registry/fastapi/openapi/schema-exposure
+    title: "OpenAPI docs exposed without authentication"
+    cwe: CWE-200
+    severity: medium
+    pattern_type: regex
+    regex: "docs_url\\s*=\\s*['\"][^'\"]+['\"]"
+    suggestion: "Disable /docs and /redoc in production or protect with authentication middleware"
+
+  - id: registry/fastapi/idor/path-param-no-auth
+    title: "IDOR via path parameter without ownership check"
+    cwe: CWE-639
+    severity: high
+    pattern_type: taint_sink
+    sinks:
+      - db.query(Model).filter(Model.id == item_id).first()
+      - db.get(Model, item_id)
+    suggestion: "Add .filter(Model.user_id == current_user.id) for ownership enforcement"
+
+  - id: registry/fastapi/mass-assign/model-update
+    title: "Mass Assignment via **model.dict() update"
+    cwe: CWE-915
+    severity: high
+    pattern_type: taint_sink
+    sinks:
+      - db_item.__dict__.update(
+      - setattr(db_item,
+    suggestion: "Use explicit field assignments; avoid spreading full request model onto DB objects"
+
+  - id: registry/fastapi/validation/missing-input-check
+    title: "Query parameter used without validation"
+    cwe: CWE-20
+    severity: medium
+    pattern_type: taint_sink
+    sinks:
+      - Query(None,
+      - Query(default=None
+    suggestion: "Add min_length, max_length, and regex constraints to Query() parameters"
+
+  - id: registry/fastapi/crypto/weak-password-hash
+    title: "Weak hashing algorithm for password"
+    cwe: CWE-328
+    severity: high
+    pattern_type: taint_sink
+    sinks:
+      - hashlib.md5(password
+      - hashlib.sha1(password
+      - sha1(password
+    suggestion: "Use passlib with bcrypt or argon2 for password hashing"
+
+  - id: registry/fastapi/background/shell-injection
+    title: "Command Injection in BackgroundTask"
+    cwe: CWE-78
+    severity: critical
+    pattern_type: taint_sink
+    sinks:
+      - BackgroundTasks().add_task(os.system
+      - BackgroundTask(subprocess.run
+    suggestion: "Never schedule shell commands from user-supplied data"
+
+  - id: registry/fastapi/cors/allow-all-origins
+    title: "CORS allows all origins in FastAPI CORSMiddleware"
+    cwe: CWE-942
+    severity: high
+    pattern_type: regex
+    regex: "allow_origins\\s*=\\s*\\[\\s*['\"]\\*['\"]"
+    suggestion: "Specify an explicit origins allowlist in CORSMiddleware"
+
+  - id: registry/fastapi/response/stream-user-data
+    title: "StreamingResponse of user-controlled data without content-type"
+    cwe: CWE-79
+    severity: medium
+    pattern_type: taint_sink
+    sinks:
+      - StreamingResponse(request.
+      - StreamingResponse(body
+    suggestion: "Set an explicit media_type; never stream unvalidated user data as HTML"
+
+  - id: registry/fastapi/auth/bearer-token-logged
+    title: "Bearer token written to log"
+    cwe: CWE-532
+    severity: high
+    pattern_type: taint_sink
+    sinks:
+      - logger.debug(bearer
+      - logger.info(authorization
+      - logger.debug(authorization
+    suggestion: "Never log Authorization headers or bearer tokens"
+
+  - id: registry/fastapi/upload/unrestricted-file
+    title: "Unrestricted file upload via UploadFile"
+    cwe: CWE-434
+    severity: high
+    pattern_type: taint_sink
+    sinks:
+      - UploadFile
+      - file.filename
+      - await file.read()
+    suggestion: "Validate content_type and file extension before processing UploadFile objects"
+
+  - id: registry/fastapi/cmd/eval-body
+    title: "Code Injection via eval/exec of request body"
+    cwe: CWE-95
+    severity: critical
+    pattern_type: taint_sink
+    sinks:
+      - eval(await request.body(
+      - eval(body
+      - exec(await request.body(
+      - exec(body
+    suggestion: "Never eval or exec user-supplied data"
+
+  - id: registry/fastapi/auth/no-token-expiry
+    title: "JWT token created without expiry"
+    cwe: CWE-613
+    severity: high
+    pattern_type: regex
+    regex: "jwt\\.encode\\(\\{(?!.*exp).*\\}"
+    suggestion: "Always include 'exp' claim: exp=datetime.utcnow() + timedelta(minutes=30)"
+
+  - id: registry/fastapi/rate-limit/missing
+    title: "Public endpoint missing rate limiting"
+    cwe: CWE-400
+    severity: medium
+    pattern_type: ast_structural
+    route_decorator: "@app.post(\"/login"
+    missing_decorators:
+      - "@limiter."
+      - "RateLimiter"
+    suggestion: "Add rate limiting to auth endpoints with slowapi or similar"
+
+  - id: registry/fastapi/db/connection-string-hardcoded
+    title: "Database connection string hardcoded in source"
+    cwe: CWE-798
+    severity: critical
+    pattern_type: regex
+    regex: "DATABASE_URL\\s*=\\s*['\"](?:postgresql|mysql|sqlite)://[^'\"]+:[^'\"]+@"
+    suggestion: "Load DATABASE_URL from environment: os.environ['DATABASE_URL']"
+
+  - id: registry/fastapi/middleware/trust-host-any
+    title: "TrustedHostMiddleware allows any host"
+    cwe: CWE-116
+    severity: high
+    pattern_type: regex
+    regex: "TrustedHostMiddleware.*allowed_hosts\\s*=\\s*\\[\\s*['\"]\\*['\"]"
+    suggestion: "Specify explicit allowed_hosts in TrustedHostMiddleware"
+
+  - id: registry/fastapi/logging/request-body-full-log
+    title: "Full request body logged (may contain secrets)"
+    cwe: CWE-532
+    severity: medium
+    pattern_type: taint_sink
+    sinks:
+      - logger.debug(await request.body(
+      - logger.info(await request.body(
+      - logging.debug(await request.body(
+    suggestion: "Avoid logging full request bodies; mask or summarise sensitive fields"
+
+  - id: registry/fastapi/error/debug-traceback
+    title: "Exception traceback exposed in API response"
+    cwe: CWE-209
+    severity: high
+    pattern_type: taint_sink
+    sinks:
+      - JSONResponse({'traceback': traceback
+      - JSONResponse({'error': str(exc)
+      - return {'error': str(e), 'traceback':
+    suggestion: "Return generic error messages; log tracebacks server-side only"
+
+  - id: registry/fastapi/sql/tortoise-raw
+    title: "SQL Injection via Tortoise ORM raw query"
+    cwe: CWE-89
+    severity: critical
+    pattern_type: taint_sink
+    sinks:
+      - await Model.raw(
+      - await Tortoise.get_connection(
+      - conn.execute_query(
+    suggestion: "Use Tortoise ORM filters instead of raw queries"
+
+  - id: registry/fastapi/sql/sqlmodel-execute-raw
+    title: "SQL Injection via SQLModel session.exec with raw text"
+    cwe: CWE-89
+    severity: critical
+    pattern_type: taint_sink
+    sinks:
+      - session.exec(text(
+      - session.execute(text(
+    suggestion: "Pass user values as bound parameters to text()"
+
+  - id: registry/fastapi/auth/api-key-in-query
+    title: "API key transmitted in query string (logged in access logs)"
+    cwe: CWE-598
+    severity: medium
+    pattern_type: taint_sink
+    sinks:
+      - APIKeyQuery(
+    suggestion: "Prefer APIKeyHeader to avoid API keys appearing in server access logs"
+
+  - id: registry/fastapi/response/arbitrary-redirect
+    title: "Open Redirect via RedirectResponse with user URL"
+    cwe: CWE-601
+    severity: high
+    pattern_type: taint_sink
+    sinks:
+      - RedirectResponse(url=request.
+      - RedirectResponse(request.query_params
+      - RedirectResponse(url=params.get(
+    suggestion: "Validate redirect URL against a safe allowlist of allowed domains"

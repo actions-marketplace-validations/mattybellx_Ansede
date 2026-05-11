@@ -19,6 +19,7 @@ import json
 import sys
 import textwrap
 from pathlib import Path
+from typing import Any
 
 from ansede_static._types import AnalysisResult, Finding, Severity, TraceFrame
 from ansede_static.config import apply_config_to_results, load_config, temporary_analyzer_config
@@ -188,7 +189,7 @@ def _analyze_file(
     requested_js_backend: str = "auto",
     experimental_js_ast: bool = False,
     global_graph: GlobalGraph | None = None,
-    cache_store: object | None = None,
+    cache_store: Any | None = None,
 ) -> AnalysisResult:
     lang = _detect_language(path)
     try:
@@ -843,6 +844,18 @@ def build_parser() -> argparse.ArgumentParser:
             "unavailable. Results are embedded in JSON/SARIF output."
         ),
     )
+    parser.add_argument(
+        "--diagnostics", action="store_true",
+        help=(
+            "Run shadow-scan diff diagnostics alongside findings. "
+            "For each finding, reports whether a simpler pattern engine would also flag it, "
+            "helping attribute FP/FN causes. Included in JSON/SARIF output under .diagnostics."
+        ),
+    )
+    parser.add_argument(
+        "--diagnostics-output", type=Path, default=None, metavar="FILE",
+        help="Write standalone diagnostics JSON report to FILE (implies --diagnostics).",
+    )
     return parser
 
 
@@ -1230,10 +1243,13 @@ def _main_impl() -> None:
 
     runtime_rules = []
     _yaml_rules = None
+    _registry_loader = None
     try:
         from ansede_static import yaml_rules as _yaml_rules
+        from ansede_static.registry.sharded_loader import load_custom_rules_for_code as _load_registry_packs_for_source
+
         runtime_rules = _yaml_rules.load_runtime_rules(config=config, workspace_root=workspace_root)
-        runtime_rules = runtime_rules + _yaml_rules.load_registry_packs()
+        _registry_loader = _load_registry_packs_for_source
     except Exception as exc:
         print(f"ansede-static: warning: custom/community rules error: {exc}", file=sys.stderr)
 
@@ -1464,16 +1480,22 @@ def _main_impl() -> None:
             scan_targets = files + entropy_files
             if scan_targets:
                 if use_parallel:
-                    import concurrent.futures as _cf
                     import os as _os
+                    from ansede_static.engine.async_scanner import scan_files_sync
+
                     n_workers = worker_count or _os.cpu_count() or 4
                     print(
                         f"ansede-static: parallel scan with {n_workers} workers over {len(scan_targets)} files",
                         file=sys.stderr,
                     )
-                    with _cf.ProcessPoolExecutor(max_workers=n_workers) as _pool:
-                        for _res in _pool.map(_scan_one, scan_targets):
-                            results.append(_res)
+                    parallel_results = scan_files_sync(
+                        scan_targets,
+                        scan_fn=_scan_one,
+                        max_workers=n_workers,
+                    )
+                    for target in scan_targets:
+                        if target in parallel_results:
+                            results.append(parallel_results[target])
                 elif Progress and args.format == "text":
                     with Progress(
                         SpinnerColumn(), # type: ignore
@@ -1509,7 +1531,7 @@ def _main_impl() -> None:
             parser.print_help()
             sys.exit(0)
 
-    if runtime_rules and _yaml_rules is not None:
+    if _yaml_rules is not None:
         for r in results:
             if not r.language:
                 continue
@@ -1524,7 +1546,11 @@ def _main_impl() -> None:
             if not code_text:
                 continue
             try:
-                r.findings.extend(_yaml_rules.apply_custom_rules(code_text, r.file_path, r.language, runtime_rules))
+                applicable_rules = list(runtime_rules)
+                if _registry_loader is not None and r.language in {"python", "javascript", "java", "csharp"}:
+                    applicable_rules.extend(_registry_loader(code_text, r.language))
+                if applicable_rules:
+                    r.findings.extend(_yaml_rules.apply_custom_rules(code_text, r.file_path, r.language, applicable_rules))
             except Exception as exc:
                 print(f"ansede-static: warning: custom rules error: {exc}", file=sys.stderr)
 
@@ -1637,13 +1663,73 @@ def _main_impl() -> None:
                     if suggestion:
                         f.auto_fix = suggestion
 
+    # ── Diagnostics: Shadow-scan diff ───────────────────────────────────────
+    diagnostics_enabled = getattr(args, "diagnostics", False) or args.diagnostics_output is not None
+    diagnostics_payload: dict[str, Any] | None = None
+    if diagnostics_enabled and results:
+        from ansede_static.engine.shadow_scan import generate_shadow_report, shadow_report_to_dict
+
+        all_diagnostics: list[dict[str, Any]] = []
+        for r in results:
+            if not r.file_path or r.file_path == "<stdin>":
+                continue
+            try:
+                code = Path(r.file_path).read_text(encoding="utf-8", errors="replace")
+            except OSError:
+                continue
+            shadow = generate_shadow_report(
+                code=code,
+                real_findings=list(r.findings),
+                file_path=r.file_path,
+                language=r.language or "",
+            )
+            all_diagnostics.append(shadow_report_to_dict(shadow))
+
+        diagnostics_payload = {
+            "kind": "ansede-diagnostics",
+            "version": 1,
+            "summary": {
+                "files_analyzed": len(all_diagnostics),
+                "total_diffs": sum(d["total_diffs"] for d in all_diagnostics),
+                "total_ifds_only": sum(len(d["ifds_only"]) for d in all_diagnostics),
+                "total_shadow_only": sum(len(d["shadow_only"]) for d in all_diagnostics),
+            },
+            "per_file": all_diagnostics,
+        }
+
+        if args.diagnostics_output is not None:
+            args.diagnostics_output.parent.mkdir(parents=True, exist_ok=True)
+            args.diagnostics_output.write_text(
+                json.dumps(diagnostics_payload, indent=2), encoding="utf-8"
+            )
+            if not args.quiet:
+                print(
+                    f"ansede-static: diagnostics written to {args.diagnostics_output}",
+                    file=sys.stderr,
+                )
+
     # ── Format output ───────────────────────────────────────────────────────
     if args.format == "text":
         output = format_text_multi(results, colour=colour and primary_output_path is None, verbose=args.verbose)
     elif args.format == "json":
         output = format_json(results, execution=execution)
+        # Inject diagnostics if present
+        if diagnostics_payload is not None:
+            try:
+                parsed = json.loads(output)
+                parsed["diagnostics"] = diagnostics_payload
+                output = json.dumps(parsed, indent=2)
+            except (json.JSONDecodeError, TypeError):
+                pass
     elif args.format == "sarif":
         output = format_sarif(results, execution=execution)
+        if diagnostics_payload is not None:
+            try:
+                parsed = json.loads(output)
+                parsed["ansede_diagnostics"] = diagnostics_payload
+                output = json.dumps(parsed, indent=2)
+            except (json.JSONDecodeError, TypeError):
+                pass
     elif args.format == "ciso":
         output = format_ciso_report(results)
     elif args.format == "html":

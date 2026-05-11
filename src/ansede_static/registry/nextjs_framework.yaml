@@ -1,0 +1,116 @@
+language: javascript
+framework: nextjs_framework
+version: "1.0"
+description: "Next.js framework security rules: server-side injection, API auth, and data exposure"
+rules:
+  - id: registry/nextjs/sqli/getserversideprops
+    title: "SQL Injection in getServerSideProps"
+    cwe: CWE-89
+    severity: critical
+    pattern_type: taint_sink
+    sinks:
+      - await db.query(`SELECT.*${context.query.
+      - await pool.query(`SELECT.*${params.
+    suggestion: "Use parameterized queries; never interpolate context.query values into SQL"
+
+  - id: registry/nextjs/auth/api-route-no-auth
+    title: "Next.js API route without authentication check"
+    cwe: CWE-306
+    severity: high
+    pattern_type: regex
+    regex: "export (?:default )?(?:async )?function handler\\(req, res\\)\\s*\\{"
+    suggestion: "Check session or token at the start of every API route handler"
+
+  - id: registry/nextjs/redirect/open-redirect
+    title: "Open Redirect in getServerSideProps via user URL"
+    cwe: CWE-601
+    severity: high
+    pattern_type: taint_sink
+    sinks:
+      - redirect: { destination: context.query.
+      - res.redirect(302, req.query.
+    suggestion: "Validate destination URLs against an allowlist"
+
+  - id: registry/nextjs/ssrf/fetch-user-url
+    title: "SSRF via fetch in getServerSideProps with user URL"
+    cwe: CWE-918
+    severity: high
+    pattern_type: taint_sink
+    sinks:
+      - await fetch(context.query.url
+      - await fetch(params.url
+      - await axios.get(context.query.
+    suggestion: "Validate and restrict external URLs; use an allowlist"
+
+  - id: registry/nextjs/prototype/pollution-body
+    title: "Prototype Pollution via Next.js API request body"
+    cwe: CWE-1321
+    severity: high
+    pattern_type: taint_sink
+    sinks:
+      - req.body.__proto__
+      - req.body.constructor
+      - Object.assign({}, req.body
+    suggestion: "Strip __proto__ and constructor keys from parsed body before processing"
+
+  - id: registry/nextjs/env/client-bundle-exposure
+    title: "Server-side secret exposed in client bundle"
+    cwe: CWE-200
+    severity: critical
+    pattern_type: regex
+    regex: "process\\.env\\.(?!NEXT_PUBLIC_)[A-Z_]+"
+    suggestion: "Use NEXT_PUBLIC_ prefix only for public vars; access secrets only in getServerSideProps or API routes"
+
+  - id: registry/nextjs/headers/missing-security
+    title: "Next.js custom server without security headers"
+    cwe: CWE-693
+    severity: medium
+    pattern_type: regex
+    regex: "createServer\\(\\s*(?:app|handler)\\s*\\)(?!.*headers)"
+    suggestion: "Add security headers in next.config.js headers() function"
+
+  - id: registry/nextjs/injection/eval-in-page
+    title: "Code Injection via eval in Next.js page or API"
+    cwe: CWE-94
+    severity: critical
+    pattern_type: taint_sink
+    sinks:
+      - eval(req.body.
+      - eval(context.query.
+    suggestion: "Never evaluate user-controlled strings as code"
+
+  - id: registry/nextjs/xss/dangeroushtml-getserverside
+    title: "XSS via dangerouslySetInnerHTML with server data"
+    cwe: CWE-79
+    severity: high
+    pattern_type: taint_sink
+    sinks:
+      - dangerouslySetInnerHTML={{ __html: props.
+      - dangerouslySetInnerHTML={{__html: data.
+    suggestion: "Sanitize with DOMPurify.sanitize() before using dangerouslySetInnerHTML"
+
+  - id: registry/nextjs/path/traversal
+    title: "Path Traversal in Next.js API route file read"
+    cwe: CWE-22
+    severity: critical
+    pattern_type: taint_sink
+    sinks:
+      - fs.readFile(req.query.
+      - path.join(process.cwd(), req.query.
+    suggestion: "Validate and normalize paths; ensure they remain within the allowed directory"
+
+  - id: registry/nextjs/upload/unrestricted
+    title: "Unrestricted file upload in Next.js API route"
+    cwe: CWE-434
+    severity: high
+    pattern_type: regex
+    regex: "export const config\\s*=\\s*\\{\\s*api:\\s*\\{\\s*bodyParser:\\s*false"
+    suggestion: "Validate file type, extension, and size before saving uploaded files"
+
+  - id: registry/nextjs/csrf/missing
+    title: "Next.js API route modifying data without CSRF protection"
+    cwe: CWE-352
+    severity: high
+    pattern_type: regex
+    regex: "req\\.method\\s*===\\s*['\"]POST['\"].*(?!csrf|token|origin)"
+    suggestion: "Use CSRF tokens or verify Origin header for state-changing API routes"

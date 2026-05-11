@@ -1,0 +1,329 @@
+"""
+ansede_static.registry.loader
+──────────────────────────────
+Lazy framework-aware rule pack loader.
+
+Performance contract:
+  - Framework detection via string search: O(n) in source size.
+  - Pack loading is memoised per pack path; subsequent calls are O(1).
+  - All packs for a language are loaded once per process (LRU-cached).
+  - Rule application (taint_sink matching) is O(m*s) where m = matching rules
+    and s = source lines — both bounded by the 30-second per-file timeout.
+
+Zero dependencies: uses only stdlib re, json, and pathlib. YAML parsing
+delegates to the existing zero-dependency parser in yaml_rules.py.
+"""
+from __future__ import annotations
+
+import logging
+import re
+from functools import lru_cache
+from pathlib import Path
+from typing import Any
+
+_log = logging.getLogger(__name__)
+
+_REGISTRY_DIR = Path(__file__).parent
+
+# ── Framework detection patterns ─────────────────────────────────────────────
+# Mapping: language -> list of (framework_id, [detection_strings])
+_FRAMEWORK_MARKERS: dict[str, list[tuple[str, list[str]]]] = {
+    "python": [
+        ("django", ["from django", "import django", "django.db", "django.conf", "django.http"]),
+        ("flask", ["from flask", "import flask", "Flask(", "@app.route", "@blueprint.route", "flask_login"]),
+        ("fastapi", ["from fastapi", "import fastapi", "FastAPI(", "APIRouter(", "@router.", "Depends("]),
+        ("sqlalchemy", ["from sqlalchemy", "import sqlalchemy", "create_engine(", "declarative_base", "sessionmaker("]),
+        ("django_rest", ["from rest_framework", "import rest_framework", "APIView", "ModelSerializer", "viewsets."]),
+        ("aiohttp_web", ["from aiohttp", "import aiohttp", "web.Application(", "web.RouteTableDef"]),
+        ("celery", ["from celery", "import celery", "Celery(", "@app.task", "@celery.task", "shared_task"]),
+        ("boto3_aws", ["import boto3", "from boto3", "boto3.client(", "boto3.resource(", "boto3.Session("]),
+        ("requests_lib", ["import requests", "from requests", "requests.get(", "requests.post(", "import httpx", "httpx.get("]),
+        ("pymongo", ["import pymongo", "from pymongo", "MongoClient(", "gridfs.", "motor."]),
+        ("redis_py", ["import redis", "from redis", "Redis(", "StrictRedis(", "from redis.client"]),
+        ("cryptography_lib", ["from cryptography", "import cryptography", "from Crypto", "import Crypto"]),
+        ("subprocess_lib", ["import subprocess", "from subprocess", "subprocess.run(", "subprocess.call(", "os.system(", "os.popen("]),
+        ("xml_parsers", ["import xml", "from xml", "ElementTree", "minidom", "from lxml", "import lxml"]),
+        ("yaml_load", ["import yaml", "from yaml", "yaml.load(", "yaml.safe_load(", "ruamel"]),
+        ("tornado_web", ["import tornado", "from tornado", "RequestHandler", "tornado.web.Application"]),
+        ("pydantic", ["from pydantic", "import pydantic", "BaseModel", "model_validator", "field_validator"]),
+        ("socketio", ["import socketio", "from socketio", "socketio.Server(", "flask_socketio"]),
+    ],
+    "javascript": [
+        ("express_js", ["require('express')", 'require("express")', "from 'express'", 'from "express"', "express()"]),
+        ("react_frontend", ["from 'react'", 'from "react"', "React.Component", "useState(", "useEffect(", "jsx"]),
+        ("nextjs_framework", ["from 'next/", 'from "next/', "getServerSideProps", "getStaticProps", "NextApiRequest"]),
+        ("sequelize_orm", ["require('sequelize')", "Sequelize(", "DataTypes.", "Model.findAll", "sequelize.query"]),
+        ("prisma_orm", ["PrismaClient", "prisma.$queryRaw", "@prisma/client", "prisma.$executeRaw"]),
+        ("typeorm_js", ["require('typeorm')", "from 'typeorm'", "getRepository(", "getManager(", "createConnection("]),
+        ("mongoose_js", ["require('mongoose')", "mongoose.connect", "mongoose.Schema", "mongoose.model("]),
+        ("mysql2_js", ["require('mysql2')", "mysql2/promise", "createPool(", "pool.query(", "connection.query("]),
+        ("pg_js", ["require('pg')", "new Pool(", "new Client(", "pg.Pool", "pg.Client"]),
+        ("knex_js", ["require('knex')", "knex(", "knex.raw(", "queryBuilder", ".whereRaw("]),
+        ("axios_js", ["require('axios')", "axios.get(", "axios.post(", "axios.put(", "axios.delete("]),
+        ("nodejs_core", ["require('fs')", "require('child_process')", "require('path')", "require('crypto')", "require('http')"]),
+        ("graphql_js", ["require('graphql')", "require('apollo-server')", "gql`", "makeExecutableSchema", "ApolloServer("]),
+        ("nestjs_framework", ["@Controller(", "@Injectable()", "@Module(", "@Get(", "@UseGuards(", "NestFactory"]),
+        ("angular_js", ["@Component(", "@NgModule(", "@Injectable()", "Angular", "ngModule"]),
+        ("vue_js", ["createApp(", "defineComponent(", "Vue.component(", "v-html", "vue-router"]),
+    ],
+    "java": [
+        ("spring_boot", ["@SpringBootApplication", "@RestController", "@Controller", "@Service", "@Repository"]),
+    ],
+    "csharp": [
+        ("aspnet_core", ["[ApiController]", "[HttpGet]", "[HttpPost]", "IActionResult", "ControllerBase"]),
+    ],
+}
+
+# Which pack files belong to which language (stem -> language)
+_PACK_LANGUAGE: dict[str, str] = {
+    # Python
+    "django": "python", "flask": "python", "fastapi": "python",
+    "sqlalchemy": "python", "django_rest": "python", "aiohttp_web": "python",
+    "celery": "python", "boto3_aws": "python", "requests_lib": "python",
+    "pymongo": "python", "redis_py": "python", "cryptography_lib": "python",
+    "subprocess_lib": "python", "xml_parsers": "python", "yaml_load": "python",
+    "tornado_web": "python", "pydantic": "python", "socketio": "python",
+    # JavaScript
+    "express_js": "javascript", "react_frontend": "javascript", "nextjs_framework": "javascript",
+    "sequelize_orm": "javascript", "prisma_orm": "javascript", "typeorm_js": "javascript",
+    "mongoose_js": "javascript", "mysql2_js": "javascript", "pg_js": "javascript",
+    "knex_js": "javascript", "axios_js": "javascript", "nodejs_core": "javascript",
+    "graphql_js": "javascript", "nestjs_framework": "javascript", "angular_js": "javascript",
+    "vue_js": "javascript",
+    # Java
+    "spring_boot": "java",
+    # C#
+    "aspnet_core": "csharp",
+}
+
+
+def detect_frameworks(source: str, language: str) -> frozenset[str]:
+    """Detect which frameworks are used in the given source code.
+
+    Returns a frozenset of framework IDs (e.g., {'django', 'sqlalchemy'}).
+    O(n * m) where n = source length and m = number of marker strings per language.
+    """
+    detected: set[str] = set()
+    markers = _FRAMEWORK_MARKERS.get(language, [])
+    for framework_id, patterns in markers:
+        for pattern in patterns:
+            if pattern in source:
+                detected.add(framework_id)
+                break
+    return frozenset(detected)
+
+
+def _parse_registry_pack(path: Path) -> list[Any]:
+    """Parse a registry YAML pack file and return raw rule dicts.
+
+    Uses the existing yaml_rules zero-dependency parser.
+    """
+    try:
+        from ansede_static.yaml_rules import _load_yaml_or_json
+        data = _load_yaml_or_json(path)
+    except Exception as exc:
+        _log.warning("Registry pack %s: parse error: %s", path.name, exc)
+        return []
+
+    if not isinstance(data, dict):
+        _log.warning("Registry pack %s: expected a YAML mapping, got %s", path.name, type(data).__name__)
+        return []
+
+    rules_raw = data.get("rules", [])
+    if not isinstance(rules_raw, list):
+        return []
+    return rules_raw
+
+
+def _build_custom_rule_from_entry(
+    entry: dict[str, Any],
+    *,
+    pack_path: Path,
+    default_language: str,
+) -> Any | None:
+    """Convert a raw rule dict from a registry pack into a CustomRule.
+
+    Returns None if the entry is invalid or incomplete.
+    """
+    from ansede_static.yaml_rules import CustomRule
+    from ansede_static._types import Severity
+
+    if not isinstance(entry, dict):
+        return None
+
+    rule_id = str(entry.get("id", "")).strip()
+    if not rule_id:
+        return None
+
+    title = str(entry.get("title", "")).strip()
+    if not title:
+        return None
+
+    cwe_raw = str(entry.get("cwe", "")).strip().upper()
+    if not re.fullmatch(r"CWE-\d+", cwe_raw):
+        return None
+
+    severity_str = str(entry.get("severity", "medium")).strip().lower()
+    if severity_str not in {"critical", "high", "medium", "low", "info"}:
+        severity_str = "medium"
+
+    language = str(entry.get("language", default_language)).strip().lower()
+    # Normalise language aliases
+    if language in ("js", "javascript", "jsx", "ts", "typescript", "tsx"):
+        language = "javascript"
+    elif language in ("py", "python"):
+        language = "python"
+    elif language in ("go", "golang"):
+        language = "go"
+    elif language in ("c#", "cs", "csharp"):
+        language = "csharp"
+
+    pattern_type = str(entry.get("pattern_type", "taint_sink")).strip().lower()
+
+    sink_names: tuple[str, ...] = ()
+    compiled_pattern = None
+    raw_pattern = ""
+    route_decorator = ""
+    missing_decorators: tuple[str, ...] = ()
+
+    if pattern_type == "taint_sink":
+        raw_sinks = entry.get("sinks", entry.get("sink_names", []))
+        if isinstance(raw_sinks, str):
+            sink_names = (raw_sinks.strip(),) if raw_sinks.strip() else ()
+        elif isinstance(raw_sinks, list):
+            sink_names = tuple(str(s).strip() for s in raw_sinks if str(s).strip())
+        if not sink_names:
+            return None
+
+    elif pattern_type == "regex":
+        raw_pattern = str(entry.get("regex", entry.get("pattern", ""))).strip()
+        if not raw_pattern:
+            return None
+        try:
+            compiled_pattern = re.compile(raw_pattern)
+        except re.error as exc:
+            _log.warning("Registry rule %r: invalid regex: %s", rule_id, exc)
+            return None
+
+    elif pattern_type == "ast_structural":
+        route_decorator = str(entry.get("route_decorator", "")).strip()
+        raw_missing = entry.get("missing_decorators", entry.get("missing_decorator", []))
+        missing_decorators = tuple(
+            str(item).strip() for item in (raw_missing if isinstance(raw_missing, list) else [])
+            if str(item).strip()
+        )
+        if not route_decorator:
+            return None
+    else:
+        return None
+
+    suggestion = str(entry.get("suggestion", "")).strip()
+    description = str(entry.get("description", title)).strip()
+    tags_raw = entry.get("tags", [])
+    tags = tuple(
+        str(t).strip() for t in (tags_raw if isinstance(tags_raw, list) else [])
+        if str(t).strip()
+    )
+
+    return CustomRule(
+        rule_id=rule_id,
+        title=title,
+        description=description,
+        severity=Severity(severity_str),
+        cwe=cwe_raw,
+        category="security",
+        languages=(language,) if language else (),
+        pattern_type=pattern_type,
+        pattern=compiled_pattern,
+        raw_pattern=raw_pattern,
+        route_decorator=route_decorator,
+        missing_decorators=missing_decorators,
+        sink_names=sink_names,
+        suggestion=suggestion,
+        maturity="stable",
+        tags=tags,
+        source_path=str(pack_path),
+        is_community=False,
+    )
+
+
+@lru_cache(maxsize=64)
+def _load_single_pack(pack_path_str: str) -> tuple[Any, ...]:
+    """Load and cache a single registry pack file. Returns tuple of CustomRule."""
+    path = Path(pack_path_str)
+    if not path.is_file():
+        return ()
+
+    default_language = _PACK_LANGUAGE.get(path.stem, "")
+    raw_rules = _parse_registry_pack(path)
+
+    loaded: list[Any] = []
+    for entry in raw_rules:
+        rule = _build_custom_rule_from_entry(entry, pack_path=path, default_language=default_language)
+        if rule is not None:
+            loaded.append(rule)
+
+    _log.debug("Loaded %d rules from registry pack %s", len(loaded), path.name)
+    return tuple(loaded)
+
+
+def load_packs_for_language(language: str) -> list[Any]:
+    """Load all registry packs for a given language.
+
+    This is the language-level lazy loading — only packs for the requested
+    language are loaded into memory.
+    """
+    normalised = language.strip().lower()
+    if normalised in ("js", "javascript", "jsx", "ts", "typescript", "tsx"):
+        normalised = "javascript"
+    elif normalised in ("py", "python"):
+        normalised = "python"
+
+    rules: list[Any] = []
+    for stem, lang in _PACK_LANGUAGE.items():
+        if lang != normalised:
+            continue
+        pack_path = _REGISTRY_DIR / f"{stem}.yaml"
+        if pack_path.is_file():
+            rules.extend(_load_single_pack(str(pack_path)))
+
+    return rules
+
+
+def load_packs_for_source(source: str, language: str) -> list[Any]:
+    """Load registry packs filtered to frameworks detected in source.
+
+    This is the full lazy loading — only packs whose framework is actually
+    present in the source file are returned, reducing noise.
+    """
+    frameworks = detect_frameworks(source, language)
+    if not frameworks:
+        # If no specific framework detected, fall back to all language packs
+        # (handles generic Python/JS without framework imports).
+        return load_packs_for_language(language)
+
+    rules: list[Any] = []
+    for framework_id in frameworks:
+        pack_path = _REGISTRY_DIR / f"{framework_id}.yaml"
+        if pack_path.is_file():
+            rules.extend(_load_single_pack(str(pack_path)))
+
+    return rules
+
+
+def load_all_registry_packs() -> list[Any]:
+    """Load all registry packs regardless of language (used for --list-rules)."""
+    rules: list[Any] = []
+    for pack_path in sorted(_REGISTRY_DIR.glob("*.yaml")):
+        rules.extend(_load_single_pack(str(pack_path)))
+    return rules
+
+
+def count_registry_rules() -> int:
+    """Return total number of rules across all registry packs."""
+    return len(load_all_registry_packs())
+
+
+def list_registry_pack_names() -> list[str]:
+    """Return sorted list of available pack names (without .yaml extension)."""
+    return sorted(p.stem for p in _REGISTRY_DIR.glob("*.yaml"))

@@ -1,0 +1,90 @@
+language: javascript
+framework: mysql2_js
+version: "1.0"
+description: "mysql2 and mysql Node.js driver security rules"
+rules:
+  - id: registry/mysql2/sqli/query-template
+    title: "SQL Injection via mysql2 query with template string"
+    cwe: CWE-89
+    severity: critical
+    pattern_type: taint_sink
+    sinks:
+      - connection.query(`SELECT
+      - connection.query(`UPDATE
+      - connection.query(`INSERT
+      - connection.query(`DELETE
+      - pool.query(`SELECT
+    suggestion: "Use parameterized queries: connection.query('SELECT * FROM t WHERE id = ?', [id])"
+
+  - id: registry/mysql2/sqli/execute-template
+    title: "SQL Injection via connection.execute() with template string"
+    cwe: CWE-89
+    severity: critical
+    pattern_type: taint_sink
+    sinks:
+      - connection.execute(`SELECT
+      - connection.execute(`UPDATE
+      - pool.execute(`
+    suggestion: "Use positional placeholders: connection.execute('SELECT ... WHERE id = ?', [id])"
+
+  - id: registry/mysql2/sqli/format-user
+    title: "SQL Injection via mysql.format() with user data"
+    cwe: CWE-89
+    severity: high
+    pattern_type: taint_sink
+    sinks:
+      - mysql.format(`
+      - mysql2.format(`
+    suggestion: "Use mysql.format(sql, [values]) with a template literal for safe formatting"
+
+  - id: registry/mysql2/credentials/hardcoded-host
+    title: "Hardcoded MySQL credentials in connection config"
+    cwe: CWE-798
+    severity: critical
+    pattern_type: regex
+    regex: "createConnection\\(\\{[^}]*password\\s*:\\s*['\"][^'\"]{1,64}['\"]"
+    suggestion: "Load MySQL credentials from environment variables"
+
+  - id: registry/mysql2/tls/ssl-disabled
+    title: "MySQL connection without SSL"
+    cwe: CWE-319
+    severity: high
+    pattern_type: regex
+    regex: "createConnection\\(\\{[^}]*ssl\\s*:\\s*false"
+    suggestion: "Enable SSL: { ssl: { ca: fs.readFileSync('ca.pem') } }"
+
+  - id: registry/mysql2/sqli/multistatement
+    title: "MySQL multipleStatements enabled (SQL Injection risk)"
+    cwe: CWE-89
+    severity: high
+    pattern_type: regex
+    regex: "multipleStatements\\s*:\\s*true"
+    suggestion: "Disable multipleStatements; it allows stacked SQL injection attacks"
+
+  - id: registry/mysql2/dos/no-connection-limit
+    title: "MySQL pool without connection limit"
+    cwe: CWE-400
+    severity: medium
+    pattern_type: regex
+    regex: "createPool\\(\\{(?!.*connectionLimit)"
+    suggestion: "Set connectionLimit: createPool({ connectionLimit: 10, ... })"
+
+  - id: registry/mysql2/sqli/escape-concat
+    title: "SQL Injection via string concatenation even with escape()"
+    cwe: CWE-89
+    severity: high
+    pattern_type: taint_sink
+    sinks:
+      - 'SELECT * FROM ' + mysql.escape(
+      - 'WHERE ' + mysql.escape(
+    suggestion: "Use positional placeholders (?) instead of manual escaping"
+
+  - id: registry/mysql2/sqli/query-callback-user
+    title: "SQL Injection via query callback result reflected without escaping"
+    cwe: CWE-89
+    severity: high
+    pattern_type: taint_sink
+    sinks:
+      - connection.query('SELECT * FROM ' + req.
+      - pool.query('SELECT * FROM ' + req.
+    suggestion: "Use parameterized queries with ? placeholders"

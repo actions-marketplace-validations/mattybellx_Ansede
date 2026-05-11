@@ -1,0 +1,177 @@
+language: python
+framework: cryptography_lib
+version: "1.0"
+description: "Python cryptography library security rules: weak algorithms, key management, and protocol misuse"
+rules:
+  - id: registry/crypto/symmetric/weak-des
+    title: "Weak symmetric cipher: DES or 3DES"
+    cwe: CWE-327
+    severity: high
+    pattern_type: taint_sink
+    sinks:
+      - algorithms.TripleDES(
+      - Cipher(algorithms.TripleDES(
+      - DES.new(
+      - DES3.new(
+    suggestion: "Use AES-256-GCM: Cipher(algorithms.AES(key), modes.GCM(nonce))"
+
+  - id: registry/crypto/symmetric/ecb-mode
+    title: "AES used in ECB mode (patterns exposed)"
+    cwe: CWE-327
+    severity: high
+    pattern_type: taint_sink
+    sinks:
+      - modes.ECB()
+      - AES.MODE_ECB
+      - Cipher(algorithms.AES(key), modes.ECB())
+    suggestion: "Use AES-GCM or AES-CBC with a random IV instead of ECB"
+
+  - id: registry/crypto/symmetric/static-iv
+    title: "Static or hardcoded IV/nonce for symmetric encryption"
+    cwe: CWE-329
+    severity: high
+    pattern_type: regex
+    regex: "(?:iv|nonce|IV)\\s*=\\s*b['\"][^'\"]{1,32}['\"]"
+    suggestion: "Generate a random IV for each encryption: os.urandom(16)"
+
+  - id: registry/crypto/symmetric/short-key
+    title: "AES key shorter than 256 bits"
+    cwe: CWE-326
+    severity: high
+    pattern_type: regex
+    regex: "os\\.urandom\\((?:8|16)\\).*aes|aes.*os\\.urandom\\((?:8|16)\\)"
+    suggestion: "Use 256-bit keys: os.urandom(32)"
+
+  - id: registry/crypto/hash/md5-password
+    title: "MD5 used for password hashing"
+    cwe: CWE-328
+    severity: critical
+    pattern_type: taint_sink
+    sinks:
+      - hashes.MD5()
+      - hashlib.md5(password
+      - hashlib.md5(user.password
+    suggestion: "Use bcrypt, Argon2, or PBKDF2 for password hashing"
+
+  - id: registry/crypto/hash/sha1-password
+    title: "SHA-1 used for password hashing"
+    cwe: CWE-328
+    severity: high
+    pattern_type: taint_sink
+    sinks:
+      - hashes.SHA1()
+      - hashlib.sha1(password
+    suggestion: "Use SHA-256+ with HMAC or bcrypt/Argon2 for password hashing"
+
+  - id: registry/crypto/hash/no-salt
+    title: "Hash without salt (susceptible to rainbow tables)"
+    cwe: CWE-759
+    severity: high
+    pattern_type: regex
+    regex: "hashlib\\.(?:sha256|sha512)\\(password"
+    suggestion: "Use HMAC or a dedicated password hashing library (bcrypt, Argon2, PBKDF2)"
+
+  - id: registry/crypto/rsa/weak-key-size
+    title: "RSA key size below 2048 bits"
+    cwe: CWE-326
+    severity: high
+    pattern_type: regex
+    regex: "generate_private_key\\(.*key_size\\s*=\\s*(?:512|768|1024)"
+    suggestion: "Use key_size=2048 or 4096 for RSA keys"
+
+  - id: registry/crypto/rsa/no-oaep
+    title: "RSA encryption without OAEP padding"
+    cwe: CWE-780
+    severity: high
+    pattern_type: taint_sink
+    sinks:
+      - padding.PKCS1v15()
+      - RSA.PKCS1_v1_5
+    suggestion: "Use OAEP padding: padding.OAEP(mgf=padding.MGF1(hashes.SHA256()), algorithm=hashes.SHA256())"
+
+  - id: registry/crypto/rsa/signature-pkcs1v15
+    title: "RSA signature with PKCS1v15 (vulnerable to Bleichenbacher)"
+    cwe: CWE-327
+    severity: medium
+    pattern_type: taint_sink
+    sinks:
+      - private_key.sign(data, padding.PKCS1v15()
+    suggestion: "Use PSS padding for RSA signatures: padding.PSS(mgf=padding.MGF1(hashes.SHA256()), salt_length=padding.PSS.MAX_LENGTH)"
+
+  - id: registry/crypto/key/hardcoded-private-key
+    title: "Private key hardcoded in source"
+    cwe: CWE-321
+    severity: critical
+    pattern_type: regex
+    regex: "-----BEGIN (?:RSA|EC|PRIVATE) PRIVATE KEY-----"
+    suggestion: "Store private keys in a secrets manager or HSM; never hardcode them"
+
+  - id: registry/crypto/tls/ssl-no-verify
+    title: "SSL context with cert verification disabled"
+    cwe: CWE-295
+    severity: critical
+    pattern_type: taint_sink
+    sinks:
+      - ssl.create_default_context()
+      - ctx.check_hostname = False
+      - ctx.verify_mode = ssl.CERT_NONE
+    suggestion: "Keep check_hostname=True and verify_mode=ssl.CERT_REQUIRED"
+
+  - id: registry/crypto/tls/old-protocol
+    title: "TLS/SSL protocol version too old"
+    cwe: CWE-326
+    severity: high
+    pattern_type: taint_sink
+    sinks:
+      - ssl.PROTOCOL_SSLv23
+      - ssl.PROTOCOL_TLSv1
+      - ssl.PROTOCOL_TLSv1_1
+      - ssl.PROTOCOL_SSLv2
+      - ssl.PROTOCOL_SSLv3
+    suggestion: "Use ssl.PROTOCOL_TLS_CLIENT with minimum_version=ssl.TLSVersion.TLSv1_2"
+
+  - id: registry/crypto/random/insecure-random-token
+    title: "Insecure random for security token generation"
+    cwe: CWE-330
+    severity: high
+    pattern_type: taint_sink
+    sinks:
+      - random.choice(string.
+      - ''.join(random.choice(
+      - random.getrandbits(
+    suggestion: "Use secrets.token_hex() or secrets.token_urlsafe()"
+
+  - id: registry/crypto/fernet/hardcoded-key
+    title: "Hardcoded Fernet encryption key"
+    cwe: CWE-321
+    severity: critical
+    pattern_type: regex
+    regex: "Fernet\\(['\"][A-Za-z0-9+/=]{44}['\"]\\)"
+    suggestion: "Load Fernet key from environment variable or secrets manager"
+
+  - id: registry/crypto/ec/weak-curve
+    title: "Weak elliptic curve (secp192r1/secp224r1)"
+    cwe: CWE-326
+    severity: high
+    pattern_type: taint_sink
+    sinks:
+      - ec.SECP192R1()
+      - ec.SECP224R1()
+      - ec.SECT163R2()
+    suggestion: "Use ec.SECP256R1() or ec.SECP384R1() for modern ECC security"
+
+  - id: registry/crypto/pbkdf2/low-iterations
+    title: "PBKDF2 with insufficient iterations"
+    cwe: CWE-916
+    severity: high
+    pattern_type: regex
+    regex: "pbkdf2_hmac\\(.*(?:iterations|n)\\s*=\\s*(?:[0-9]{1,4})(?:[^0-9]|$)"
+    suggestion: "Use at least 600,000 iterations for PBKDF2-HMAC-SHA256"
+
+  - id: registry/crypto/argon2/weak-params
+    title: "Argon2 with insufficient memory or time cost"
+    cwe: CWE-916
+    severity: medium
+    pattern_type: regex
+    regex: "time_cost\\s*=\\s*[12](?:[^0-9]|$)"
+    suggestion: "Use time_cost>=3, memory_cost>=65536 for Argon2"

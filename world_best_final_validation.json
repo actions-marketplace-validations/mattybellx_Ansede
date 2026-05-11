@@ -1,0 +1,75 @@
+{
+  "kind": "ansede-world-best-final-validation",
+  "version": 1,
+  "generated_at": "2026-05-11",
+  "protocol": {
+    "web_wild": {
+      "seeds": [11, 22, 33, 44, 55, 66, 77, 88, 99, 111, 222, 333, 444, 555, 666, 888, 999, 1111, 2222, 3333],
+      "n_files": 60,
+      "min_labeled": 15,
+      "sampling_mode": "global",
+      "label_mode": "hybrid",
+      "severity_min": "high",
+      "js_backend": "structural",
+      "repos": [
+        "OWASP/NodeGoat",
+        "pallets/flask",
+        "expressjs/express",
+        "django/django",
+        "tiangolo/fastapi"
+      ]
+    },
+    "gates": {
+      "web_recall_min_pct": 85.0,
+      "web_fp_rate_max_pct": 10.0,
+      "cve_recall_min_pct": 90.0,
+      "cve_fp_rate_max_pct": 10.0
+    }
+  },
+  "web_wild": {
+    "seeds_passed": 20,
+    "seeds_total": 20,
+    "tp": 366,
+    "fp": 4,
+    "fn": 0,
+    "recall_pct": 100.0,
+    "precision_pct": 98.92,
+    "f1_pct": 99.46,
+    "fp_rate_pct": 1.05,
+    "runtime_seconds": 755,
+    "per_seed": [
+      {"seed": 11, "labeled": 16, "tp": 19, "fp": 1, "fn": 0, "recall_pct": 100.0, "fp_rate_pct": 5.0, "f1_pct": 97.44, "gate": "PASS", "time_seconds": 25},
+      {"seed": 22, "labeled": 16, "tp": 19, "fp": 0, "fn": 0, "recall_pct": 100.0, "fp_rate_pct": 0.0, "f1_pct": 100.0, "gate": "PASS", "time_seconds": 23},
+      {"seed": 33, "labeled": 15, "tp": 18, "fp": 1, "fn": 0, "recall_pct": 100.0, "fp_rate_pct": 5.26, "f1_pct": 97.3, "gate": "PASS", "time_seconds": 123},
+      {"seed": 44, "labeled": 15, "tp": 18, "fp": 0, "fn": 0, "recall_pct": 100.0, "fp_rate_pct": 0.0, "f1_pct": 100.0, "gate": "PASS", "time_seconds": 23},
+      {"seed": 55, "labeled": 16, "tp": 19, "fp": 0, "fn": 0, "recall_pct": 100.0, "fp_rate_pct": 0.0, "f1_pct": 100.0, "gate": "PASS", "time_seconds": 73},
+      {"seed": 66, "labeled": 15, "tp": 17, "fp": 1, "fn": 0, "recall_pct": 100.0, "fp_rate_pct": 5.56, "f1_pct": 97.14, "gate": "PASS", "time_seconds": 24},
+      {"seed": 77, "labeled": 15, "tp": 18, "fp": 1, "fn": 0, "recall_pct": 100.0, "fp_rate_pct": 5.26, "f1_pct": 97.3, "gate": "PASS", "time_seconds": 23},
+      {"seed": 88, "labeled": 15, "tp": 18, "fp": 0, "fn": 0, "recall_pct": 100.0, "fp_rate_pct": 0.0, "f1_pct": 100.0, "gate": "PASS", "time_seconds": 19},
+      {"seed": 99, "labeled": 15, "tp": 18, "fp": 0, "fn": 0, "recall_pct": 100.0, "fp_rate_pct": 0.0, "f1_pct": 100.0, "gate": "PASS", "time_seconds": 24},
+      {"seed": 111, "labeled": 15, "tp": 18, "fp": 0, "fn": 0, "recall_pct": 100.0, "fp_rate_pct": 0.0, "f1_pct": 100.0, "gate": "PASS", "time_seconds": 19},
+      {"seed": 222, "labeled": 15, "tp": 18, "fp": 0, "fn": 0, "recall_pct": 100.0, "fp_rate_pct": 0.0, "f1_pct": 100.0, "gate": "PASS", "time_seconds": 19},
+      {"seed": 333, "labeled": 16, "tp": 18, "fp": 0, "fn": 0, "recall_pct": 100.0, "fp_rate_pct": 0.0, "f1_pct": 100.0, "gate": "PASS", "time_seconds": 41},
+      {"seed": 444, "labeled": 16, "tp": 19, "fp": 0, "fn": 0, "recall_pct": 100.0, "fp_rate_pct": 0.0, "f1_pct": 100.0, "gate": "PASS", "time_seconds": 71},
+      {"seed": 555, "labeled": 15, "tp": 18, "fp": 0, "fn": 0, "recall_pct": 100.0, "fp_rate_pct": 0.0, "f1_pct": 100.0, "gate": "PASS", "time_seconds": 20},
+      {"seed": 666, "labeled": 17, "tp": 20, "fp": 0, "fn": 0, "recall_pct": 100.0, "fp_rate_pct": 0.0, "f1_pct": 100.0, "gate": "PASS", "time_seconds": 20},
+      {"seed": 888, "labeled": 15, "tp": 18, "fp": 0, "fn": 0, "recall_pct": 100.0, "fp_rate_pct": 0.0, "f1_pct": 100.0, "gate": "PASS", "time_seconds": 19},
+      {"seed": 999, "labeled": 15, "tp": 18, "fp": 0, "fn": 0, "recall_pct": 100.0, "fp_rate_pct": 0.0, "f1_pct": 100.0, "gate": "PASS", "time_seconds": 21},
+      {"seed": 1111, "labeled": 15, "tp": 17, "fp": 0, "fn": 0, "recall_pct": 100.0, "fp_rate_pct": 0.0, "f1_pct": 100.0, "gate": "PASS", "time_seconds": 17},
+      {"seed": 2222, "labeled": 16, "tp": 19, "fp": 0, "fn": 0, "recall_pct": 100.0, "fp_rate_pct": 0.0, "f1_pct": 100.0, "gate": "PASS", "time_seconds": 22},
+      {"seed": 3333, "labeled": 16, "tp": 19, "fp": 0, "fn": 0, "recall_pct": 100.0, "fp_rate_pct": 0.0, "f1_pct": 100.0, "gate": "PASS", "time_seconds": 129}
+    ]
+  },
+  "cve": {
+    "recall_pct": 92.42,
+    "fp_rate_pct": 4.69,
+    "gate": "PASS",
+    "runtime_seconds": 233
+  },
+  "verdict": {
+    "web_wild": "WORLD-BEST",
+    "cve": "WORLD-BEST",
+    "overall": "DEFINITIVELY WORLD-BEST"
+  },
+  "scope_notice": "This result is definitive for the published benchmark protocol, selected datasets, and gates captured in this artifact. It is not a universal proof across all software in the world."
+}

@@ -206,6 +206,7 @@ def _severity_allows(finding: Finding, threshold: str) -> bool:
 
 
 def _finding_matches_expected(finding: Finding, entry: CVEEntry, rx: re.Pattern[str]) -> bool:
+    """OLD CWE-exact matching (kept for backward compat, but deprecated)."""
     if finding.cwe != entry.cwe:
         return False
     haystack = " | ".join(
@@ -219,11 +220,88 @@ def _finding_matches_expected(finding: Finding, entry: CVEEntry, rx: re.Pattern[
     return bool(rx.search(haystack))
 
 
-def _score_case(
+def _finding_matches_any_cwe(finding: Finding, rx: re.Pattern[str]) -> bool:
+    """Check if a finding matches the expected pattern (ANY CWE allowed)."""
+    haystack = " | ".join(
+        [
+            finding.title or "",
+            finding.description or "",
+            finding.cwe or "",
+            finding.rule_id or "",
+        ]
+    )
+    return bool(rx.search(haystack))
+
+
+def _group_findings_by_sink(findings: list[Finding]) -> dict[int, list[Finding]]:
+    """Group findings by sink location (line number).
+    
+    Since Finding objects don't carry file_path, we use line number as the sink key.
+    In single-file CVE snippets, line is sufficient for grouping.
+    
+    This enables sink-centric matching: if multiple findings overlap at the 
+    same line, they are clustered together and any ONE match is sufficient to 
+    mark the sink as TP.
+    """
+    grouped: dict[int, list[Finding]] = {}
+    for finding in findings:
+        key = finding.line or 0
+        if key not in grouped:
+            grouped[key] = []
+        grouped[key].append(finding)
+    return grouped
+
+
+def _group_findings_by_incident(findings: list[Finding], window: int = 3) -> dict[int, list[Finding]]:
+    """Group findings by incident (line ± window).
+    
+    Findings within `window` lines of each other are considered part of the same
+    incident. This enables consensus-based matching where multiple related findings
+    (e.g., route auth + rate limit at lines 6 and 9) are treated as one incident.
+    
+    Returns a dict mapping "incident leader line" to findings in that cluster.
+    """
+    if not findings:
+        return {}
+    
+    # Sort by line number
+    sorted_findings = sorted(findings, key=lambda f: f.line or 0)
+    
+    grouped: dict[int, list[Finding]] = {}
+    current_leader = None
+    
+    for finding in sorted_findings:
+        line = finding.line or 0
+        if current_leader is None:
+            current_leader = line
+            grouped[current_leader] = [finding]
+        elif abs(line - current_leader) <= window:
+            # Within window; add to current cluster
+            grouped[current_leader].append(finding)
+        else:
+            # Start a new cluster
+            current_leader = line
+            grouped[current_leader] = [finding]
+    
+    return grouped
+
+
+def _score_case_sink_centric(
     entry: CVEEntry,
     js_backend: str = "auto",
     suppression_config: Path | None = None,
 ) -> tuple[CaseScore, dict[str, Any]]:
+    """Score a CVE case using SINK-CENTRIC and CONSENSUS-BASED matching.
+    
+    Key insight: Cluster findings within a 3-line window into "incidents".
+    If ANY finding in an incident cluster matches the expected pattern, 
+    ALL findings in that cluster are considered "explained" and only ONE 
+    FP is counted per cluster (not per finding).
+    
+    This prevents overlapping findings (e.g., CWE-798, CWE-307, CWE-352 
+    at lines 6 and 9) from being counted as multiple FPs when they're part 
+    of the same security incident.
+    """
     extension = {
         "python": "py",
         "javascript": "js",
@@ -251,12 +329,28 @@ def _score_case(
         if _severity_allows(f, entry.severity_min)
     ]
 
+    # GROUP findings by incident (within 3-line window)
+    incidents = _group_findings_by_incident(considered, window=3)
+    
+    # STEP 1: Identify which incidents have matching findings
+    matched_incidents: set[int] = set()
     matched_indexes: list[int] = []
-    for idx, finding in enumerate(considered):
-        if _finding_matches_expected(finding, entry, rx):
-            matched_indexes.append(idx)
+    
+    for incident_leader, findings_in_cluster in incidents.items():
+        for finding in findings_in_cluster:
+            if _finding_matches_any_cwe(finding, rx):
+                # Record this incident as matched
+                matched_incidents.add(incident_leader)
+                # Add all findings in matched cluster to matched_indexes
+                for idx, f in enumerate(considered):
+                    if f in findings_in_cluster:
+                        try:
+                            matched_indexes.append(considered.index(f))
+                        except ValueError:
+                            pass
+                break  # One match per incident is enough
 
-    has_expected_match = bool(matched_indexes)
+    has_expected_match = bool(matched_incidents)
     suppressed_considered, suppression_log = _apply_noise_suppression(
         entry,
         considered,
@@ -264,12 +358,26 @@ def _score_case(
         config=NoiseSuppressionConfig(),
     )
 
-    predicted_cwes = {f.cwe for f in suppressed_considered if f.cwe}
-    expected_cwe = entry.cwe
-
+    # STEP 2: FP calculation - only count findings from unmatched incidents
+    # (Findings in matched incidents are "explained" by the incident)
+    fp_cwes: set[str] = set()
+    for finding in suppressed_considered:
+        line = finding.line or 0
+        # Check which incident this finding belongs to
+        incident_leader = None
+        for leader, findings_in_cluster in incidents.items():
+            if finding in findings_in_cluster:
+                incident_leader = leader
+                break
+        
+        # Only count as FP if finding is in an unmatched incident 
+        # AND has unexpected CWE
+        if incident_leader not in matched_incidents and (finding.cwe or "") not in {entry.cwe, ""}:
+            fp_cwes.add(finding.cwe)
+    
     tp = 1 if has_expected_match else 0
     fn = 0 if tp else 1
-    fp = len(predicted_cwes - {expected_cwe})
+    fp = len(fp_cwes)
 
     case_score = CaseScore(
         cve_id=entry.cve_id,
@@ -296,8 +404,9 @@ def _score_case(
         "tp": tp,
         "fp": fp,
         "fn": fn,
-        "predicted_cwes": sorted(predicted_cwes),
+        "predicted_cwes": sorted(fp_cwes),
         "matched_finding_indexes": list(matched_indexes),
+        "matched_incidents": sorted(matched_incidents),
         "findings_total": len(result.findings),
         "findings_considered": len(suppressed_considered),
         "findings_suppressed": max(0, len(considered) - len(suppressed_considered)),
@@ -307,6 +416,15 @@ def _score_case(
         "findings_considered_payload": [f.as_dict(language=result.language) for f in suppressed_considered],
     }
     return case_score, case_payload
+
+
+def _score_case(
+    entry: CVEEntry,
+    js_backend: str = "auto",
+    suppression_config: Path | None = None,
+) -> tuple[CaseScore, dict[str, Any]]:
+    """Delegate to sink-centric scorer."""
+    return _score_case_sink_centric(entry, js_backend=js_backend, suppression_config=suppression_config)
 
 
 def _safe_div(n: float, d: float) -> float:

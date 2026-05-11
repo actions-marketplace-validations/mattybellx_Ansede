@@ -1,0 +1,597 @@
+language: python
+framework: django
+version: "1.0"
+description: "Django-specific security sink rules covering ORM, templates, file handling, and auth patterns"
+rules:
+  - id: registry/django/sqli/queryset-raw
+    title: "SQL Injection via QuerySet.raw()"
+    cwe: CWE-89
+    severity: critical
+    pattern_type: taint_sink
+    sinks:
+      - .raw(
+      - QuerySet.raw(
+      - objects.raw(
+    suggestion: "Use parameterized QuerySet.raw('SELECT ... WHERE id = %s', [user_id])"
+
+  - id: registry/django/sqli/cursor-execute
+    title: "SQL Injection via cursor.execute()"
+    cwe: CWE-89
+    severity: critical
+    pattern_type: taint_sink
+    sinks:
+      - cursor.execute(
+      - connection.execute(
+      - db.execute(
+    suggestion: "Use parameterized cursor.execute(sql, params) with a params list"
+
+  - id: registry/django/sqli/cursor-executemany
+    title: "SQL Injection via cursor.executemany()"
+    cwe: CWE-89
+    severity: critical
+    pattern_type: taint_sink
+    sinks:
+      - cursor.executemany(
+      - connection.executemany(
+    suggestion: "Use parameterized cursor.executemany(sql, list_of_params)"
+
+  - id: registry/django/sqli/extra-where
+    title: "SQL Injection via QuerySet.extra(where=)"
+    cwe: CWE-89
+    severity: critical
+    pattern_type: taint_sink
+    sinks:
+      - .extra(where=
+      - .extra(select=
+      - .extra(tables=
+      - .extra(order_by=
+    suggestion: "Avoid QuerySet.extra(); use annotate() or filter() with ORM expressions"
+
+  - id: registry/django/sqli/rawqueryset
+    title: "SQL Injection via RawQuerySet"
+    cwe: CWE-89
+    severity: critical
+    pattern_type: taint_sink
+    sinks:
+      - RawQuerySet(
+      - Manager.db_manager(
+    suggestion: "Use Django ORM parameterized queries"
+
+  - id: registry/django/sqli/annotate-rawsql
+    title: "SQL Injection via RawSQL annotation"
+    cwe: CWE-89
+    severity: critical
+    pattern_type: taint_sink
+    sinks:
+      - RawSQL(
+      - from django.db.models import RawSQL
+    suggestion: "Use ORM expression objects (Func, Case) instead of RawSQL"
+
+  - id: registry/django/ssti/template-from-string
+    title: "Server-Side Template Injection via Template(string)"
+    cwe: CWE-94
+    severity: critical
+    pattern_type: taint_sink
+    sinks:
+      - Template(
+      - engines['django'].from_string(
+      - from_string(
+    suggestion: "Never pass user-controlled data to Template(). Use template files only"
+
+  - id: registry/django/ssti/render-template-string
+    title: "Template Injection via render_to_string with unsafe context"
+    cwe: CWE-94
+    severity: high
+    pattern_type: taint_sink
+    sinks:
+      - render_to_string(
+    suggestion: "Ensure the template name is a static string; user data should only appear in context vars"
+
+  - id: registry/django/redirect/open-redirect
+    title: "Open Redirect via HttpResponseRedirect"
+    cwe: CWE-601
+    severity: high
+    pattern_type: taint_sink
+    sinks:
+      - HttpResponseRedirect(
+      - redirect(
+      - HttpResponsePermanentRedirect(
+    suggestion: "Validate redirect URL against a safe allowlist or use url_has_allowed_host_and_scheme()"
+
+  - id: registry/django/file/fileresponse-traversal
+    title: "Path Traversal via FileResponse"
+    cwe: CWE-22
+    severity: critical
+    pattern_type: taint_sink
+    sinks:
+      - FileResponse(
+      - StreamingHttpResponse(FileWrapper(
+    suggestion: "Validate and sanitize the file path; use os.path.abspath() with an allowlist check"
+
+  - id: registry/django/file/serve-path
+    title: "Path Traversal via django.views.static.serve"
+    cwe: CWE-22
+    severity: critical
+    pattern_type: taint_sink
+    sinks:
+      - serve(request,
+      - static.serve(
+    suggestion: "Use Django's media/static file infrastructure; never serve arbitrary user-controlled paths"
+
+  - id: registry/django/file/unsafe-open
+    title: "Path Traversal via open() with user-controlled path"
+    cwe: CWE-22
+    severity: critical
+    pattern_type: taint_sink
+    sinks:
+      - open(request.GET
+      - open(request.POST
+      - open(request.data
+    suggestion: "Validate paths against BASE_DIR or a safe allowlist before opening"
+
+  - id: registry/django/mass-assignment/create-kwargs
+    title: "Mass Assignment via objects.create(**request.POST)"
+    cwe: CWE-915
+    severity: high
+    pattern_type: taint_sink
+    sinks:
+      - .create(**request.POST
+      - .create(**request.data
+      - .update(**request.POST
+      - .update(**request.data
+    suggestion: "Use Django ModelForm or DRF serializer to validate and limit fields"
+
+  - id: registry/django/mass-assignment/update-or-create
+    title: "Mass Assignment via update_or_create"
+    cwe: CWE-915
+    severity: high
+    pattern_type: taint_sink
+    sinks:
+      - update_or_create(**request.POST
+      - update_or_create(**request.data
+      - get_or_create(**request.POST
+    suggestion: "Explicitly list allowed fields instead of spreading request data"
+
+  - id: registry/django/xss/mark-safe
+    title: "XSS via mark_safe() on user-controlled data"
+    cwe: CWE-79
+    severity: critical
+    pattern_type: taint_sink
+    sinks:
+      - mark_safe(request.
+      - mark_safe(user_
+      - mark_safe(data[
+      - mark_safe(input_
+    suggestion: "Never call mark_safe() on user-controlled data; use Django's auto-escaping"
+
+  - id: registry/django/xss/format-html-unsafe
+    title: "XSS via format_html with non-escaped interpolation"
+    cwe: CWE-79
+    severity: high
+    pattern_type: taint_sink
+    sinks:
+      - format_html_join(
+    suggestion: "Use format_html() with %s placeholders for automatic escaping"
+
+  - id: registry/django/csrf/exempt-view
+    title: "CSRF Protection Disabled on View"
+    cwe: CWE-352
+    severity: high
+    pattern_type: taint_sink
+    sinks:
+      - @csrf_exempt
+      - csrf_exempt(
+    suggestion: "Use CSRF tokens; only exempt API endpoints that use token-based auth"
+
+  - id: registry/django/auth/login-no-check
+    title: "Missing authentication check before login()"
+    cwe: CWE-287
+    severity: high
+    pattern_type: taint_sink
+    sinks:
+      - auth.login(request,
+      - login(request,
+    suggestion: "Always call authenticate() before login(); check the returned user is not None"
+
+  - id: registry/django/auth/authenticate-none
+    title: "Authentication bypass when authenticate() returns None"
+    cwe: CWE-287
+    severity: high
+    pattern_type: taint_sink
+    sinks:
+      - authenticate(username=request.
+      - authenticate(email=request.
+    suggestion: "Check if authenticate() returns None before calling login()"
+
+  - id: registry/django/cmd/shell-command
+    title: "Command Injection via os.system in Django view"
+    cwe: CWE-78
+    severity: critical
+    pattern_type: taint_sink
+    sinks:
+      - os.system(request.
+      - os.popen(request.
+      - subprocess.run(request.
+      - subprocess.call(request.
+      - subprocess.check_output(request.
+    suggestion: "Use subprocess with a list of arguments and shell=False"
+
+  - id: registry/django/ssrf/outbound-request
+    title: "SSRF via requests/urllib with user-controlled URL"
+    cwe: CWE-918
+    severity: high
+    pattern_type: taint_sink
+    sinks:
+      - requests.get(request.
+      - requests.post(request.
+      - urllib.request.urlopen(request.
+      - httpx.get(request.
+    suggestion: "Validate URLs against an allowlist; block private IP ranges"
+
+  - id: registry/django/session/unsafe-session-data
+    title: "Sensitive data stored directly in session"
+    cwe: CWE-312
+    severity: medium
+    pattern_type: taint_sink
+    sinks:
+      - request.session['password
+      - request.session["password
+      - request.session['secret
+      - request.session["secret
+    suggestion: "Do not store secrets or credentials in Django sessions"
+
+  - id: registry/django/logging/password-in-log
+    title: "Sensitive data written to Django logger"
+    cwe: CWE-532
+    severity: medium
+    pattern_type: taint_sink
+    sinks:
+      - logger.info(password
+      - logger.debug(password
+      - logger.warning(password
+      - logger.error(password
+      - logging.info(password
+    suggestion: "Never log passwords, tokens, or secrets"
+
+  - id: registry/django/deserialization/pickle-in-view
+    title: "Unsafe Deserialization via pickle in Django view"
+    cwe: CWE-502
+    severity: critical
+    pattern_type: taint_sink
+    sinks:
+      - pickle.loads(request.
+      - pickle.load(request.
+      - pickle.loads(data
+    suggestion: "Use JSON or Django's built-in serializers instead of pickle"
+
+  - id: registry/django/crypto/md5-password
+    title: "Weak hash (MD5/SHA1) used for password storage"
+    cwe: CWE-328
+    severity: high
+    pattern_type: taint_sink
+    sinks:
+      - hashlib.md5(password
+      - hashlib.sha1(password
+      - md5(password
+    suggestion: "Use Django's built-in password hashers (PBKDF2, Argon2)"
+
+  - id: registry/django/hardcoded/secret-key-empty
+    title: "Django SECRET_KEY set to empty string or weak value"
+    cwe: CWE-798
+    severity: critical
+    pattern_type: regex
+    regex: "SECRET_KEY\\s*=\\s*['\"]['\"]"
+    suggestion: "Use a cryptographically random SECRET_KEY of at least 50 characters"
+
+  - id: registry/django/hardcoded/debug-true
+    title: "DEBUG=True left enabled in settings"
+    cwe: CWE-215
+    severity: high
+    pattern_type: regex
+    regex: "^DEBUG\\s*=\\s*True"
+    suggestion: "Set DEBUG=False in production; use environment variables"
+
+  - id: registry/django/hardcoded/allowed-hosts-wildcard
+    title: "ALLOWED_HOSTS set to ['*'] — host header injection"
+    cwe: CWE-116
+    severity: high
+    pattern_type: regex
+    regex: "ALLOWED_HOSTS\\s*=\\s*\\[\\s*['\"]\\*['\"]"
+    suggestion: "Explicitly list allowed hostnames; never use wildcard in production"
+
+  - id: registry/django/file/content-type-injection
+    title: "Content-Type injection via user-controlled MIME type"
+    cwe: CWE-116
+    severity: medium
+    pattern_type: taint_sink
+    sinks:
+      - HttpResponse(content_type=request.
+      - FileResponse(content_type=request.
+    suggestion: "Validate or allowlist content types; never reflect user-supplied MIME types"
+
+  - id: registry/django/idor/get-object-or-404-noscope
+    title: "IDOR via get_object_or_404 without ownership filter"
+    cwe: CWE-639
+    severity: high
+    pattern_type: taint_sink
+    sinks:
+      - get_object_or_404(
+    suggestion: "Add ownership filter: get_object_or_404(Model, pk=pk, user=request.user)"
+
+  - id: registry/django/idor/queryset-filter-pk-only
+    title: "IDOR via filter(pk=) without user ownership scope"
+    cwe: CWE-639
+    severity: high
+    pattern_type: taint_sink
+    sinks:
+      - .filter(pk=request.
+      - .filter(id=request.
+      - .get(pk=request.
+      - .get(id=request.
+    suggestion: "Add user ownership: .filter(pk=pk, user=request.user)"
+
+  - id: registry/django/regex/redos
+    title: "ReDoS via re.compile with user-controlled pattern"
+    cwe: CWE-400
+    severity: high
+    pattern_type: taint_sink
+    sinks:
+      - re.compile(request.
+      - re.match(request.
+      - re.search(request.
+      - re.fullmatch(request.
+    suggestion: "Never compile user-controlled strings as regex patterns"
+
+  - id: registry/django/xml/etree-parse-user
+    title: "XXE via xml.etree.ElementTree.parse with user data"
+    cwe: CWE-611
+    severity: high
+    pattern_type: taint_sink
+    sinks:
+      - ElementTree.parse(request.
+      - ET.parse(request.
+      - ET.fromstring(request.
+      - ElementTree.fromstring(request.
+    suggestion: "Use defusedxml library to prevent XXE attacks"
+
+  - id: registry/django/json/unsafe-json-loads
+    title: "Unsafe json.loads on request body without validation"
+    cwe: CWE-20
+    severity: medium
+    pattern_type: taint_sink
+    sinks:
+      - json.loads(request.body
+      - json.loads(request.data
+    suggestion: "Validate JSON structure with DRF serializers or schema validators"
+
+  - id: registry/django/email/header-injection
+    title: "Email header injection via user-controlled subject"
+    cwe: CWE-93
+    severity: high
+    pattern_type: taint_sink
+    sinks:
+      - EmailMessage(subject=request.
+      - send_mail(subject=request.
+      - EmailMessage(request.
+    suggestion: "Strip or encode newlines from email headers provided by users"
+
+  - id: registry/django/url/reverse-user-input
+    title: "URL construction with unvalidated user input"
+    cwe: CWE-601
+    severity: medium
+    pattern_type: taint_sink
+    sinks:
+      - reverse(request.GET
+      - resolve(request.GET
+    suggestion: "Use reverse() with named URL patterns and safe params"
+
+  - id: registry/django/auth/permission-bypass-superuser
+    title: "Superuser permission check bypassed"
+    cwe: CWE-285
+    severity: high
+    pattern_type: regex
+    regex: "is_superuser\\s*==\\s*False"
+    suggestion: "Use proper permission checks; is_superuser==False does not grant permission"
+
+  - id: registry/django/headers/response-header-injection
+    title: "Response header injection via user-controlled value"
+    cwe: CWE-113
+    severity: high
+    pattern_type: taint_sink
+    sinks:
+      - response['X-
+      - response["X-
+    suggestion: "Sanitize header values; strip newlines before setting response headers"
+
+  - id: registry/django/crypto/random-secret
+    title: "Cryptographically weak random for secret generation"
+    cwe: CWE-330
+    severity: high
+    pattern_type: taint_sink
+    sinks:
+      - random.choice(
+      - random.randint(
+      - random.random(
+    suggestion: "Use secrets.token_hex() or secrets.token_urlsafe() for security tokens"
+
+  - id: registry/django/forms/unvalidated-file-upload
+    title: "File upload with no content-type or extension validation"
+    cwe: CWE-434
+    severity: high
+    pattern_type: taint_sink
+    sinks:
+      - request.FILES['
+      - request.FILES["
+      - InMemoryUploadedFile(
+    suggestion: "Validate file extension and content type before processing uploads"
+
+  - id: registry/django/signals/sensitive-in-signal
+    title: "Password or token passed through Django signals"
+    cwe: CWE-312
+    severity: medium
+    pattern_type: taint_sink
+    sinks:
+      - post_save.send(password=
+      - post_save.send(token=
+      - Signal().send(password=
+    suggestion: "Do not pass sensitive data through Django signals"
+
+  - id: registry/django/middleware/disabled-security
+    title: "Django security middleware removed from MIDDLEWARE"
+    cwe: CWE-254
+    severity: high
+    pattern_type: regex
+    regex: "#.*SecurityMiddleware"
+    suggestion: "Keep django.middleware.security.SecurityMiddleware enabled"
+
+  - id: registry/django/cache/pickle-cache-backend
+    title: "Unsafe deserialization via cache.get()"
+    cwe: CWE-502
+    severity: high
+    pattern_type: taint_sink
+    sinks:
+      - cache.get(request.GET
+      - cache.get(request.POST
+      - caches['default'].get(
+    suggestion: "Treat all cached values as untrusted; validate before use"
+
+  - id: registry/django/upload/arbitrary-path
+    title: "Arbitrary file path in upload_to parameter"
+    cwe: CWE-22
+    severity: high
+    pattern_type: taint_sink
+    sinks:
+      - upload_to=request.
+      - upload_to=get_upload_path(
+    suggestion: "Use a fixed upload_to directory; never let users control the upload path"
+
+  - id: registry/django/auth/hardcoded-credentials
+    title: "Hardcoded test credentials in Django settings"
+    cwe: CWE-798
+    severity: critical
+    pattern_type: regex
+    regex: "PASSWORD\\s*=\\s*['\"](?:admin|password|test|123456|letmein|qwerty|django)['\"]"
+    suggestion: "Use environment variables for all credentials"
+
+  - id: registry/django/views/unsafe-redirect-next
+    title: "Open Redirect via unvalidated 'next' parameter"
+    cwe: CWE-601
+    severity: high
+    pattern_type: taint_sink
+    sinks:
+      - redirect(request.GET.get('next'
+      - redirect(request.GET.get("next"
+      - HttpResponseRedirect(request.GET.get('next'
+    suggestion: "Validate 'next' with url_has_allowed_host_and_scheme() before redirecting"
+
+  - id: registry/django/auth/user-enumeration
+    title: "User enumeration via login error messages"
+    cwe: CWE-204
+    severity: medium
+    pattern_type: taint_sink
+    sinks:
+      - messages.error(request, 'No account found
+      - messages.error(request, "No account found
+      - messages.error(request, 'Invalid username
+    suggestion: "Use a generic 'Invalid credentials' message to prevent user enumeration"
+
+  - id: registry/django/cve/eval-in-view
+    title: "Code Injection via eval() in Django view"
+    cwe: CWE-95
+    severity: critical
+    pattern_type: taint_sink
+    sinks:
+      - eval(request.GET
+      - eval(request.POST
+      - eval(request.data
+      - exec(request.GET
+      - exec(request.POST
+    suggestion: "Never use eval() or exec() with user-supplied data"
+
+  - id: registry/django/crypto/weak-cipher
+    title: "Weak cipher used (DES/3DES/RC4)"
+    cwe: CWE-327
+    severity: high
+    pattern_type: taint_sink
+    sinks:
+      - DES.new(
+      - DES3.new(
+      - ARC4.new(
+      - Blowfish.new(
+    suggestion: "Use AES-256-GCM or ChaCha20-Poly1305 for symmetric encryption"
+
+  - id: registry/django/cors/allow-all-origins
+    title: "CORS configured to allow all origins"
+    cwe: CWE-942
+    severity: high
+    pattern_type: regex
+    regex: "CORS_ALLOW_ALL_ORIGINS\\s*=\\s*True|CORS_ORIGIN_ALLOW_ALL\\s*=\\s*True"
+    suggestion: "Specify an explicit CORS_ALLOWED_ORIGINS allowlist"
+
+  - id: registry/django/database/raw-annotation
+    title: "SQL Injection via Value() with user-controlled SQL"
+    cwe: CWE-89
+    severity: critical
+    pattern_type: taint_sink
+    sinks:
+      - Value(request.GET
+      - Value(request.POST
+      - When(request.GET
+    suggestion: "Use parameterized ORM expressions"
+
+  - id: registry/django/password/plain-text-storage
+    title: "Password stored without hashing"
+    cwe: CWE-256
+    severity: critical
+    pattern_type: taint_sink
+    sinks:
+      - user.password = request.
+      - user.password=request.
+      - setattr(user, 'password', request.
+    suggestion: "Use user.set_password(raw_password) which hashes before storage"
+
+  - id: registry/django/admin/register-unsafe-model
+    title: "Django admin exposes sensitive model fields"
+    cwe: CWE-284
+    severity: medium
+    pattern_type: taint_sink
+    sinks:
+      - admin.site.register(
+    suggestion: "Use ModelAdmin with explicit list_display and readonly_fields; exclude sensitive fields"
+
+  - id: registry/django/templatetags/autoescape-off
+    title: "XSS risk: autoescape off in template tag"
+    cwe: CWE-79
+    severity: high
+    pattern_type: regex
+    regex: "{%\\s*autoescape\\s+off\\s*%}"
+    suggestion: "Avoid autoescape off; if needed, ensure all variables are explicitly safe"
+
+  - id: registry/django/signals/post-save-user-data
+    title: "User-controlled data passed to post_delete signal"
+    cwe: CWE-20
+    severity: medium
+    pattern_type: taint_sink
+    sinks:
+      - post_delete.send(instance=
+    suggestion: "Validate sender and instance before processing in signal handlers"
+
+  - id: registry/django/response/json-injection
+    title: "JSON response with unescaped user data"
+    cwe: CWE-79
+    severity: high
+    pattern_type: taint_sink
+    sinks:
+      - JsonResponse(request.GET
+      - JsonResponse(request.POST
+      - JsonResponse({'data': request.
+    suggestion: "Use DRF serializers for structured JSON responses"
+
+  - id: registry/django/auth/session-fixation
+    title: "Session not rotated after authentication (fixation risk)"
+    cwe: CWE-384
+    severity: high
+    pattern_type: taint_sink
+    sinks:
+      - login(request, user)
+    suggestion: "Ensure session is cycled after login: request.session.cycle_key()"

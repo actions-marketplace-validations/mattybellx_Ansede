@@ -32,6 +32,138 @@ class TestJsAstAnalyzer:
     assert "[source-mapped]" in finding.title
     assert "src/app.ts:1" in finding.description
 
+  def test_adjacent_minified_sidecar_map_is_found_without_comment(self, tmp_path):
+    bundle_file = tmp_path / "bundle.min.js"
+    map_file = tmp_path / "bundle.min.js.map"
+
+    bundle_file.write_text("document.write(req.query.html);\n", encoding="utf-8")
+    map_file.write_text(
+      json.dumps({
+        "version": 3,
+        "file": "bundle.min.js",
+        "sources": ["src/original.js"],
+        "names": [],
+        "mappings": "AAAA",
+      }),
+      encoding="utf-8",
+    )
+
+    result = analyze_js_ast(bundle_file.read_text(encoding="utf-8"), filename=str(bundle_file))
+    finding = next(f for f in result.findings if f.rule_id == "JS-002")
+
+    assert "[source-mapped]" in finding.title
+    assert "original.js:1" in finding.description
+
+  def test_sourcemap_comment_is_case_insensitive(self, tmp_path):
+    bundle_file = tmp_path / "bundle.js"
+    map_file = tmp_path / "bundle.js.map"
+
+    bundle_file.write_text(
+      "document.write(req.query.html);\n//# sOuRcEMaPpInGURL=bundle.js.map\n",
+      encoding="utf-8",
+    )
+    map_file.write_text(
+      json.dumps({
+        "version": 3,
+        "file": "bundle.js",
+        "sources": ["src/cased.ts"],
+        "names": [],
+        "mappings": "AAAA",
+      }),
+      encoding="utf-8",
+    )
+
+    result = analyze_js_ast(bundle_file.read_text(encoding="utf-8"), filename=str(bundle_file))
+    finding = next(f for f in result.findings if f.rule_id == "JS-002")
+
+    assert "[source-mapped]" in finding.title
+    assert "cased.ts:1" in finding.description
+
+  def test_timer_callback_redirect_taint_is_detected(self):
+    code = """
+const next = req.query.next;
+setTimeout(() => {
+  res.redirect(next);
+}, 0);
+"""
+    result = analyze_js_ast(code)
+
+    finding = next(
+      finding
+      for finding in result.findings
+      if finding.rule_id == "JS-039"
+      and any(frame.label == "through timer callback" for frame in finding.trace)
+    )
+
+    labels = [frame.label for frame in finding.trace]
+    assert any(label == "through timer callback" for label in labels)
+    assert labels[-1] == "sink `res.redirect()`"
+
+  def test_helper_return_redirect_used_directly_in_sink_is_detected(self, tmp_path):
+    helper_file = tmp_path / "redirects.js"
+    app_file = tmp_path / "app.js"
+
+    helper_file.write_text(
+      """
+export function computeRedirect(req) {
+  return req.query.next;
+}
+""",
+      encoding="utf-8",
+    )
+    app_code = """
+import { computeRedirect } from './redirects';
+
+app.get('/logout', (req, res) => {
+  res.redirect(computeRedirect(req));
+});
+"""
+    app_file.write_text(app_code, encoding="utf-8")
+
+    result = analyze_js_ast(app_code, filename=str(app_file))
+    finding = next(
+      finding
+      for finding in result.findings
+      if finding.rule_id == "JS-039"
+    )
+
+    labels = [frame.label for frame in finding.trace]
+    assert any(label == "through `computeRedirect()`" for label in labels)
+    assert labels[-1] == "sink `res.redirect()`"
+
+  def test_helper_return_ssrf_used_directly_in_sink_is_detected(self, tmp_path):
+    helper_file = tmp_path / "urls.js"
+    app_file = tmp_path / "app.js"
+
+    helper_file.write_text(
+      """
+export function buildWebhookUrl(req) {
+  return req.body.targetUrl;
+}
+""",
+      encoding="utf-8",
+    )
+    app_code = """
+import { buildWebhookUrl } from './urls';
+
+async function sendWebhook(req) {
+  return await fetch(buildWebhookUrl(req));
+}
+"""
+    app_file.write_text(app_code, encoding="utf-8")
+
+    result = analyze_js_ast(app_code, filename=str(app_file))
+    finding = next(
+      finding
+      for finding in result.findings
+      if finding.rule_id == "JS-040"
+      and any(frame.label == "through `buildWebhookUrl()`" for frame in finding.trace)
+    )
+
+    labels = [frame.label for frame in finding.trace]
+    assert any(label == "through `buildWebhookUrl()`" for label in labels)
+    assert labels[-1] == "sink `HTTP client call`"
+
   def test_indexed_sourcemap_sections_remap_multiple_lines(self, tmp_path):
     bundle_file = tmp_path / "bundle.js"
     map_file = tmp_path / "bundle.js.map"

@@ -1,0 +1,164 @@
+language: javascript
+framework: express_js
+version: "1.0"
+description: "Express.js web framework security rules"
+rules:
+  - id: registry/express/sqli/raw-query
+    title: "SQL Injection via raw query string interpolation"
+    cwe: CWE-89
+    severity: critical
+    pattern_type: taint_sink
+    sinks:
+      - db.query(`SELECT
+      - connection.query(`
+      - pool.query(`SELECT
+      - mysql.query(`
+    suggestion: "Use parameterized queries: db.query('SELECT * FROM users WHERE id = ?', [id])"
+
+  - id: registry/express/xss/res-send-user
+    title: "XSS via res.send() with unescaped user data"
+    cwe: CWE-79
+    severity: critical
+    pattern_type: taint_sink
+    sinks:
+      - res.send(req.body.
+      - res.send(req.query.
+      - res.send(req.params.
+    suggestion: "Use a templating engine with auto-escaping; never reflect user data directly"
+
+  - id: registry/express/redirect/open-redirect
+    title: "Open Redirect via res.redirect with user URL"
+    cwe: CWE-601
+    severity: high
+    pattern_type: taint_sink
+    sinks:
+      - res.redirect(req.query.
+      - res.redirect(req.body.
+      - res.redirect(req.params.
+    suggestion: "Validate redirect URLs against an allowlist"
+
+  - id: registry/express/ssrf/http-user-url
+    title: "SSRF via http.get/fetch with user-controlled URL"
+    cwe: CWE-918
+    severity: high
+    pattern_type: taint_sink
+    sinks:
+      - http.get(req.query.url
+      - https.get(req.query.url
+      - fetch(req.body.url
+      - axios.get(req.query.url
+    suggestion: "Validate URLs against an allowlist before making outbound requests"
+
+  - id: registry/express/cmd/exec-user
+    title: "Command Injection via exec/execSync with user data"
+    cwe: CWE-78
+    severity: critical
+    pattern_type: taint_sink
+    sinks:
+      - exec(req.query.
+      - exec(`${req.
+      - execSync(req.
+      - spawn('bash', ['-c', req.
+    suggestion: "Use execFile with a list of arguments instead of exec"
+
+  - id: registry/express/path/sendfile-user
+    title: "Path Traversal via res.sendFile with user path"
+    cwe: CWE-22
+    severity: critical
+    pattern_type: taint_sink
+    sinks:
+      - res.sendFile(req.query.
+      - res.sendFile(req.params.
+      - res.download(req.query.
+    suggestion: "Use path.resolve and verify the result starts with your base directory"
+
+  - id: registry/express/auth/no-helmet
+    title: "Express app without helmet security headers"
+    cwe: CWE-693
+    severity: medium
+    pattern_type: regex
+    regex: "express\\(\\)(?!.*helmet)"
+    suggestion: "Add helmet middleware: app.use(require('helmet')())"
+
+  - id: registry/express/cors/allow-all
+    title: "Express CORS configured for all origins"
+    cwe: CWE-346
+    severity: high
+    pattern_type: regex
+    regex: "origin\\s*:\\s*['\"]\\*['\"]"
+    suggestion: "Restrict CORS to specific trusted origins"
+
+  - id: registry/express/prototype/pollution
+    title: "Prototype Pollution via __proto__ or constructor in body"
+    cwe: CWE-1321
+    severity: high
+    pattern_type: taint_sink
+    sinks:
+      - req.body.__proto__
+      - req.body['__proto__']
+      - req.body.constructor
+    suggestion: "Use object spread or JSON.parse with a sanitizer; block __proto__ keys"
+
+  - id: registry/express/deserialization/node-serialize
+    title: "Unsafe Deserialization via node-serialize"
+    cwe: CWE-502
+    severity: critical
+    pattern_type: taint_sink
+    sinks:
+      - serialize.unserialize(req.
+      - unserialize(req.
+    suggestion: "Never use node-serialize or untrusted deserializers; use JSON.parse with schema validation"
+
+  - id: registry/express/eval/user-code
+    title: "Code Injection via eval with user data"
+    cwe: CWE-94
+    severity: critical
+    pattern_type: taint_sink
+    sinks:
+      - eval(req.body.
+      - eval(req.query.
+      - new Function(req.body.
+    suggestion: "Never evaluate user-controlled strings as code"
+
+  - id: registry/express/jwt/no-verify
+    title: "JWT secret hardcoded or verification disabled"
+    cwe: CWE-347
+    severity: critical
+    pattern_type: regex
+    regex: "jwt\\.sign\\(.*['\"][a-zA-Z0-9_\\-]{8,}['\"]\\)|jwt\\.verify.*algorithms\\s*:\\s*\\['none'\\]"
+    suggestion: "Load JWT secret from environment variables; always verify signature"
+
+  - id: registry/express/session/fixation
+    title: "Session not regenerated after authentication"
+    cwe: CWE-384
+    severity: high
+    pattern_type: regex
+    regex: "req\\.session\\.user\\s*=|req\\.session\\.userId\\s*="
+    suggestion: "Call req.session.regenerate() before setting authentication data"
+
+  - id: registry/express/upload/unrestricted
+    title: "Unrestricted file upload via multer"
+    cwe: CWE-434
+    severity: high
+    pattern_type: regex
+    regex: "multer\\(\\{\\s*dest:|multer\\.diskStorage"
+    suggestion: "Set fileFilter to validate MIME type and extension; limit file size"
+
+  - id: registry/express/csp/missing
+    title: "Content Security Policy not configured"
+    cwe: CWE-693
+    severity: medium
+    pattern_type: regex
+    regex: "app\\.use\\(express\\.static|res\\.sendFile(?!.*contentSecurityPolicy)"
+    suggestion: "Configure CSP via helmet: helmet.contentSecurityPolicy({directives: {...}})"
+
+  - id: registry/express/injection/template-user
+    title: "SSTI via user-controlled template string"
+    cwe: CWE-94
+    severity: critical
+    pattern_type: taint_sink
+    sinks:
+      - res.render(req.query.
+      - res.render(req.body.template
+      - nunjucks.renderString(req.
+    suggestion: "Use static template names; never render user-controlled template strings"

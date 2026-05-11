@@ -1,0 +1,107 @@
+language: javascript
+framework: angular_js
+version: "1.0"
+description: "Angular framework security rules: XSS, template injection, and DOM manipulation"
+rules:
+  - id: registry/angular/xss/bypass-sanitize-html
+    title: "XSS via DomSanitizer.bypassSecurityTrustHtml()"
+    cwe: CWE-79
+    severity: critical
+    pattern_type: taint_sink
+    sinks:
+      - this.sanitizer.bypassSecurityTrustHtml(
+      - domSanitizer.bypassSecurityTrustHtml(
+    suggestion: "Never bypass Angular's HTML sanitizer with user-controlled content"
+
+  - id: registry/angular/xss/bypass-sanitize-resource
+    title: "XSS/SSRF via DomSanitizer.bypassSecurityTrustResourceUrl()"
+    cwe: CWE-79
+    severity: critical
+    pattern_type: taint_sink
+    sinks:
+      - this.sanitizer.bypassSecurityTrustResourceUrl(
+      - domSanitizer.bypassSecurityTrustResourceUrl(
+    suggestion: "Validate URLs before using bypassSecurityTrustResourceUrl; prefer SafeResourceUrl types"
+
+  - id: registry/angular/xss/bypass-sanitize-script
+    title: "Code Injection via DomSanitizer.bypassSecurityTrustScript()"
+    cwe: CWE-94
+    severity: critical
+    pattern_type: taint_sink
+    sinks:
+      - this.sanitizer.bypassSecurityTrustScript(
+    suggestion: "Never bypass Angular's script sanitizer"
+
+  - id: registry/angular/xss/inner-html-binding
+    title: "XSS via [innerHTML] binding with user data"
+    cwe: CWE-79
+    severity: high
+    pattern_type: regex
+    regex: "\\[innerHTML\\]\\s*=\\s*['\"](?!.*sanitize)"
+    suggestion: "Sanitize HTML with DomSanitizer.sanitize(SecurityContext.HTML, html)"
+
+  - id: registry/angular/eval/template-expression
+    title: "Code Injection via eval in Angular component"
+    cwe: CWE-94
+    severity: critical
+    pattern_type: taint_sink
+    sinks:
+      - eval(this.userInput
+      - new Function(this.template
+    suggestion: "Never use eval or Function constructor in Angular components"
+
+  - id: registry/angular/redirect/router-navigate-user
+    title: "Open Redirect via Router.navigate with user URL"
+    cwe: CWE-601
+    severity: high
+    pattern_type: taint_sink
+    sinks:
+      - this.router.navigate([userInput
+      - this.router.navigateByUrl(userInput
+    suggestion: "Validate navigation targets against the defined route list"
+
+  - id: registry/angular/storage/localstorage-sensitive
+    title: "Sensitive data stored in localStorage in Angular"
+    cwe: CWE-312
+    severity: high
+    pattern_type: taint_sink
+    sinks:
+      - localStorage.setItem('token',
+      - localStorage.setItem('authToken',
+    suggestion: "Use httpOnly session cookies; avoid storing tokens in localStorage"
+
+  - id: registry/angular/http/no-auth-interceptor
+    title: "Angular HttpClient requests without auth interceptor"
+    cwe: CWE-306
+    severity: medium
+    pattern_type: regex
+    regex: "this\\.http\\.(?:get|post|put|delete)\\([^)]*\\)(?!.*interceptor)"
+    suggestion: "Add an HTTP interceptor to automatically attach authentication headers"
+
+  - id: registry/angular/xss/dom-element-inject
+    title: "XSS via direct DOM manipulation with user data"
+    cwe: CWE-79
+    severity: critical
+    pattern_type: taint_sink
+    sinks:
+      - nativeElement.innerHTML = this.
+      - el.nativeElement.innerHTML =
+    suggestion: "Use Angular's renderer: this.renderer.setProperty(el, 'textContent', value)"
+
+  - id: registry/angular/postmessage/no-origin-check
+    title: "postMessage listener without origin check in Angular"
+    cwe: CWE-346
+    severity: high
+    pattern_type: regex
+    regex: "fromEvent\\(window, ['\"]message['\"]\\)(?!.*origin)"
+    suggestion: "Filter events by trusted origin: filter(event => event.origin === TRUSTED_ORIGIN)"
+
+  - id: registry/angular/template/server-side-compilation
+    title: "Angular template compiled from user string (SSTI)"
+    cwe: CWE-94
+    severity: critical
+    pattern_type: taint_sink
+    sinks:
+      - ComponentFactory(userTemplate
+      - platformBrowserDynamic().compileModuleAsync(
+    suggestion: "Never compile Angular templates from user-controlled strings"

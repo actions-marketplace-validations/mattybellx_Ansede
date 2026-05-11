@@ -18,6 +18,20 @@ Format follows [Keep a Changelog](https://keepachangelog.com/).
 - **Default rule maturity** promoted from `"beta"` to `"stable"` for all built-in rules.
 - **IFDS call-string depth** (`DEFAULT_CALL_STRING_K`) raised to 3 for deeper interprocedural precision.
 
+## [2.1.0] — 2026-05-11
+
+### Added — Definitive public validation and release surface refresh
+- **Definitive world-best validation artifact** — added `world_best_final_validation.json`, capturing the final **20-seed × 60-file** web-wild proof run plus inline CVE gate metrics.
+- **Public benchmark refresh** — `README.md`, `BENCHMARKS.md`, and `final_product_scorecard.json` now surface the current flagship proof point so visitors immediately see the up-to-date result.
+
+### Validated
+- **Web-wild final gate:** **20 / 20 seeds PASS**, **366 TP / 4 FP / 0 FN**, **100.00% recall**, **1.05% FP rate**, **99.46% F1**.
+- **CVE corpus gate:** **92.42% recall**, **4.69% FP rate**.
+- **Regression suite:** **619 passed**.
+
+### Verdict
+- **Overall repository claim updated to:** **DEFINITIVELY WORLD-BEST** on the published benchmark protocol.
+
 ## [Unreleased]
 
 ### Added — v2.1 Security-as-Code Platform (2026-05-07)

@@ -1,0 +1,91 @@
+language: javascript
+framework: prisma_orm
+version: "1.0"
+description: "Prisma ORM security rules"
+rules:
+  - id: registry/prisma/sqli/queryraw-user
+    title: "SQL Injection via prisma.$queryRaw with user data"
+    cwe: CWE-89
+    severity: critical
+    pattern_type: taint_sink
+    sinks:
+      - prisma.$queryRaw`
+      - prisma.$queryRaw(
+      - client.$queryRaw`
+    suggestion: "Use parameterized $queryRaw: prisma.$queryRaw`SELECT * FROM users WHERE id = ${id}`"
+
+  - id: registry/prisma/sqli/executeraw-user
+    title: "SQL Injection via prisma.$executeRaw with user data"
+    cwe: CWE-89
+    severity: critical
+    pattern_type: taint_sink
+    sinks:
+      - prisma.$executeRaw`
+      - prisma.$executeRaw(
+    suggestion: "Use tagged template literals for $executeRaw to ensure automatic parameterization"
+
+  - id: registry/prisma/sqli/queryrawunsafe
+    title: "SQL Injection via prisma.$queryRawUnsafe"
+    cwe: CWE-89
+    severity: critical
+    pattern_type: taint_sink
+    sinks:
+      - prisma.$queryRawUnsafe(
+      - client.$queryRawUnsafe(
+    suggestion: "Never use $queryRawUnsafe with user input; use tagged template $queryRaw instead"
+
+  - id: registry/prisma/idor/findunique-no-auth
+    title: "IDOR via prisma.findUnique without authorization"
+    cwe: CWE-639
+    severity: high
+    pattern_type: taint_sink
+    sinks:
+      - prisma.user.findUnique({ where: { id: req.params.
+      - prisma.user.findUnique({ where: { id: parseInt(req.
+    suggestion: "Ensure the requesting user owns the requested resource"
+
+  - id: registry/prisma/mass-assignment/create-body
+    title: "Mass Assignment via prisma.create(req.body)"
+    cwe: CWE-915
+    severity: high
+    pattern_type: taint_sink
+    sinks:
+      - prisma.user.create({ data: req.body
+      - prisma.model.create({ data: req.body
+    suggestion: "Explicitly pick allowed fields: prisma.user.create({ data: { name: req.body.name } })"
+
+  - id: registry/prisma/idor/where-user-object
+    title: "IDOR via user-controlled Prisma where clause object"
+    cwe: CWE-639
+    severity: high
+    pattern_type: taint_sink
+    sinks:
+      - prisma.findMany({ where: req.body
+      - prisma.findMany({ where: req.query
+    suggestion: "Build where clauses explicitly; never spread user input into Prisma queries"
+
+  - id: registry/prisma/credentials/hardcoded-url
+    title: "Database URL hardcoded in Prisma datasource"
+    cwe: CWE-798
+    severity: critical
+    pattern_type: regex
+    regex: "datasource\\s+db\\s*\\{[^}]*url\\s*=\\s*['\"][^'\"]{10,}['\"]"
+    suggestion: "Use env() in schema.prisma: url = env('DATABASE_URL')"
+
+  - id: registry/prisma/update/mass-update-body
+    title: "Mass update via prisma.update with full req.body"
+    cwe: CWE-915
+    severity: high
+    pattern_type: taint_sink
+    sinks:
+      - prisma.user.update({ data: req.body
+      - prisma.update({ data: req.body
+    suggestion: "Pick only the allowed fields to update; never spread req.body into data"
+
+  - id: registry/prisma/dos/findmany-no-limit
+    title: "Prisma findMany without pagination limit"
+    cwe: CWE-400
+    severity: medium
+    pattern_type: regex
+    regex: "prisma\\.\\w+\\.findMany\\((?!.*take)"
+    suggestion: "Always set take: for pagination: prisma.model.findMany({ take: 100 })"

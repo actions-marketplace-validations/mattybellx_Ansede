@@ -1,0 +1,117 @@
+language: javascript
+framework: vue_js
+version: "1.0"
+description: "Vue.js framework security rules"
+rules:
+  - id: registry/vue/xss/v-html-user
+    title: "XSS via v-html directive with user data"
+    cwe: CWE-79
+    severity: critical
+    pattern_type: taint_sink
+    sinks:
+      - v-html="userContent
+      - v-html="message
+      - v-html="html
+      - :html="user
+    suggestion: "Sanitize with DOMPurify.sanitize() before using v-html; prefer text interpolation {{ }}"
+
+  - id: registry/vue/eval/mounted-eval
+    title: "Code Injection via eval in Vue component"
+    cwe: CWE-94
+    severity: critical
+    pattern_type: taint_sink
+    sinks:
+      - eval(this.userInput
+      - eval(this.$route.query.
+      - new Function(this.template
+    suggestion: "Never evaluate user-controlled data as code in Vue components"
+
+  - id: registry/vue/redirect/router-push-user
+    title: "Open Redirect via $router.push with user URL"
+    cwe: CWE-601
+    severity: high
+    pattern_type: taint_sink
+    sinks:
+      - this.$router.push(userInput
+      - this.$router.push(this.redirectUrl
+      - router.push(this.$route.query.redirect
+    suggestion: "Validate navigation targets against the defined routes list"
+
+  - id: registry/vue/xss/template-string
+    title: "XSS via template string interpolation in render function"
+    cwe: CWE-79
+    severity: high
+    pattern_type: taint_sink
+    sinks:
+      - h('div', { innerHTML: user
+      - createElement('span', { domProps: { innerHTML: this.
+    suggestion: "Use textContent (domProps: { textContent: value }) instead of innerHTML"
+
+  - id: registry/vue/storage/vuex-sensitive
+    title: "Sensitive data stored in Vuex without encryption"
+    cwe: CWE-312
+    severity: medium
+    pattern_type: taint_sink
+    sinks:
+      - commit('setToken', token
+      - commit('setPassword',
+      - state.authToken =
+    suggestion: "Use httpOnly cookies for tokens; avoid storing secrets in Vuex/localStorage"
+
+  - id: registry/vue/ssrf/fetch-user-url
+    title: "SSRF via fetch/axios in Vue component with user URL"
+    cwe: CWE-918
+    severity: high
+    pattern_type: taint_sink
+    sinks:
+      - axios.get(this.url
+      - fetch(this.$route.query.url
+      - this.$http.get(userUrl
+    suggestion: "Validate URLs against an allowlist before making requests from components"
+
+  - id: registry/vue/postmessage/no-origin
+    title: "postMessage listener without origin check in Vue"
+    cwe: CWE-346
+    severity: high
+    pattern_type: regex
+    regex: "window\\.addEventListener\\(['\"]message['\"].*(?!event\\.origin)"
+    suggestion: "Check event.origin: if (event.origin !== TRUSTED_ORIGIN) return;"
+
+  - id: registry/vue/prototype/pollution-mixin
+    title: "Prototype Pollution via Vue mixin object spread"
+    cwe: CWE-1321
+    severity: medium
+    pattern_type: taint_sink
+    sinks:
+      - Object.assign(this.$data, userData
+      - Vue.set(target, '__proto__',
+    suggestion: "Sanitize objects before spreading into Vue component data"
+
+  - id: registry/vue/upload/unrestricted
+    title: "Unrestricted file upload via Vue file input"
+    cwe: CWE-434
+    severity: high
+    pattern_type: regex
+    regex: "<input[^>]*type\\s*=\\s*['\"]file['\"](?![^>]*accept)"
+    suggestion: "Set accept attribute to restrict MIME types; validate server-side as well"
+
+  - id: registry/vue/template/server-render
+    title: "Vue SSR template injection via user-controlled template"
+    cwe: CWE-94
+    severity: critical
+    pattern_type: taint_sink
+    sinks:
+      - Vue.compile(userTemplate
+      - compileToFunctions(req.body.
+    suggestion: "Never compile Vue templates from user-controlled strings"
+
+  - id: registry/vue/xss/attribute-injection
+    title: "XSS via user-controlled attribute binding"
+    cwe: CWE-79
+    severity: high
+    pattern_type: taint_sink
+    sinks:
+      - :href="userUrl
+      - :src="userData
+      - :style="userStyle
+    suggestion: "Sanitize and validate attribute values; block javascript: and data: URI schemes"

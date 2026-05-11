@@ -1,0 +1,179 @@
+language: python
+framework: aiohttp_web
+version: "1.0"
+description: "aiohttp web server security rules: SSRF, SSTI, command injection, and response handling"
+rules:
+  - id: registry/aiohttp/ssrf/client-get-user-url
+    title: "SSRF via aiohttp ClientSession.get with user URL"
+    cwe: CWE-918
+    severity: high
+    pattern_type: taint_sink
+    sinks:
+      - session.get(url=request.
+      - await session.get(request.
+      - session.post(url=request.
+      - aiohttp.request('GET', user_
+    suggestion: "Validate URLs against an allowlist before making outbound requests"
+
+  - id: registry/aiohttp/ssrf/client-ssl-false
+    title: "TLS verification disabled in aiohttp ClientSession"
+    cwe: CWE-295
+    severity: high
+    pattern_type: taint_sink
+    sinks:
+      - ssl=False
+      - verify_ssl=False
+      - connector=aiohttp.TCPConnector(ssl=False
+    suggestion: "Keep SSL verification enabled"
+
+  - id: registry/aiohttp/response/html-injection
+    title: "XSS via Response with user-controlled HTML body"
+    cwe: CWE-79
+    severity: critical
+    pattern_type: taint_sink
+    sinks:
+      - web.Response(text=request.
+      - web.Response(body=request.
+      - aiohttp.web.Response(text=user_
+    suggestion: "Escape user data with html.escape() before embedding in HTML responses"
+
+  - id: registry/aiohttp/cmd/subprocess-user
+    title: "Command Injection via subprocess in aiohttp handler"
+    cwe: CWE-78
+    severity: critical
+    pattern_type: taint_sink
+    sinks:
+      - await asyncio.create_subprocess_shell(request.
+      - await asyncio.create_subprocess_exec(request.
+      - subprocess.run(request.
+    suggestion: "Use asyncio.create_subprocess_exec with a list of arguments and no shell"
+
+  - id: registry/aiohttp/path/send-file-traversal
+    title: "Path Traversal via FileResponse with user path"
+    cwe: CWE-22
+    severity: critical
+    pattern_type: taint_sink
+    sinks:
+      - web.FileResponse(path=request.
+      - web.FileResponse(request.
+      - FileResponse(user_
+    suggestion: "Validate file paths against a safe base directory"
+
+  - id: registry/aiohttp/auth/no-authentication
+    title: "aiohttp route handler without authentication check"
+    cwe: CWE-306
+    severity: high
+    pattern_type: ast_structural
+    route_decorator: "@routes.get("
+    missing_decorators:
+      - "login_required"
+      - "require_auth"
+    suggestion: "Add an authentication middleware or decorator to protected routes"
+
+  - id: registry/aiohttp/session/cookie-no-secure
+    title: "aiohttp session cookie without Secure flag"
+    cwe: CWE-614
+    severity: high
+    pattern_type: regex
+    regex: "cookie_jar.*secure\\s*=\\s*False|SimpleCookie.*Secure.*False"
+    suggestion: "Set secure=True for all session cookies in production"
+
+  - id: registry/aiohttp/deserialization/pickle-request
+    title: "Unsafe Deserialization via pickle with request body"
+    cwe: CWE-502
+    severity: critical
+    pattern_type: taint_sink
+    sinks:
+      - pickle.loads(await request.read(
+      - pickle.loads(await request.content.read(
+    suggestion: "Use JSON serialization with Pydantic or marshmallow validation"
+
+  - id: registry/aiohttp/upload/unrestricted-file
+    title: "Unrestricted file upload in aiohttp handler"
+    cwe: CWE-434
+    severity: high
+    pattern_type: taint_sink
+    sinks:
+      - reader.next()
+      - await field.read()
+      - await reader.next()
+    suggestion: "Validate content_type and filename extension for all file uploads"
+
+  - id: registry/aiohttp/redirect/open-redirect
+    title: "Open Redirect via raise HTTPFound with user URL"
+    cwe: CWE-601
+    severity: high
+    pattern_type: taint_sink
+    sinks:
+      - raise web.HTTPFound(location=request.
+      - raise web.HTTPMovedPermanently(location=request.
+      - raise HTTPFound(request.
+    suggestion: "Validate redirect URLs against an allowlist"
+
+  - id: registry/aiohttp/header/injection
+    title: "HTTP response header injection"
+    cwe: CWE-113
+    severity: high
+    pattern_type: taint_sink
+    sinks:
+      - response.headers['X-
+      - response.headers["X-
+    suggestion: "Strip CR/LF from header values before setting them"
+
+  - id: registry/aiohttp/cors/allow-all
+    title: "CORS allows all origins in aiohttp-cors"
+    cwe: CWE-942
+    severity: high
+    pattern_type: regex
+    regex: "aiohttp_cors.*ResourceOptions.*allow_credentials=True.*expose_headers=['\"]\\*['\"]"
+    suggestion: "Specify an explicit origin allowlist in CORS configuration"
+
+  - id: registry/aiohttp/sql/raw-execute
+    title: "SQL Injection via aiopg/asyncpg execute with user data"
+    cwe: CWE-89
+    severity: critical
+    pattern_type: taint_sink
+    sinks:
+      - await conn.execute(f"
+      - await cur.execute(f"
+      - await connection.execute(f"
+    suggestion: "Use parameterized queries with $1 placeholders"
+
+  - id: registry/aiohttp/logger/request-dump
+    title: "Full request logged including potential sensitive headers"
+    cwe: CWE-532
+    severity: medium
+    pattern_type: taint_sink
+    sinks:
+      - logger.debug(request.headers
+      - logger.info(request.headers
+      - print(request.headers
+    suggestion: "Exclude Authorization and Cookie headers from log output"
+
+  - id: registry/aiohttp/websocket/no-origin-check
+    title: "WebSocket without origin validation"
+    cwe: CWE-346
+    severity: high
+    pattern_type: taint_sink
+    sinks:
+      - aiohttp.web.WebSocketResponse()
+      - ws = web.WebSocketResponse(
+    suggestion: "Validate the Origin header before upgrading WebSocket connections"
+
+  - id: registry/aiohttp/template/aiohttp-jinja2-user
+    title: "SSTI via aiohttp_jinja2.render_string with user data"
+    cwe: CWE-94
+    severity: critical
+    pattern_type: taint_sink
+    sinks:
+      - aiohttp_jinja2.render_string(request.
+      - aiohttp_jinja2.render_string(user_
+    suggestion: "Never use user data as a template string; always use static template files"
+
+  - id: registry/aiohttp/config/debug-mode
+    title: "aiohttp Application running in debug mode"
+    cwe: CWE-215
+    severity: high
+    pattern_type: regex
+    regex: "web\\.run_app\\(.*debug\\s*=\\s*True|app\\.run\\(.*debug\\s*=\\s*True"
+    suggestion: "Set debug=False in production"

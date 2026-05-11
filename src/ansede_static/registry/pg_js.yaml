@@ -1,0 +1,82 @@
+language: javascript
+framework: pg_js
+version: "1.0"
+description: "node-postgres (pg) driver security rules"
+rules:
+  - id: registry/pg/sqli/query-template
+    title: "SQL Injection via pg client.query() with template string"
+    cwe: CWE-89
+    severity: critical
+    pattern_type: taint_sink
+    sinks:
+      - client.query(`SELECT
+      - client.query(`UPDATE
+      - client.query(`INSERT
+      - client.query(`DELETE
+      - pool.query(`SELECT
+    suggestion: "Use parameterized queries: client.query('SELECT * FROM t WHERE id = $1', [id])"
+
+  - id: registry/pg/sqli/query-concat
+    title: "SQL Injection via pg query with string concatenation"
+    cwe: CWE-89
+    severity: critical
+    pattern_type: taint_sink
+    sinks:
+      - client.query('SELECT * FROM ' + req.
+      - pool.query('SELECT * FROM ' + req.
+      - client.query('WHERE ' + req.
+    suggestion: "Use $1, $2 placeholders with the values array"
+
+  - id: registry/pg/credentials/hardcoded-string
+    title: "Hardcoded PostgreSQL connection string"
+    cwe: CWE-798
+    severity: critical
+    pattern_type: regex
+    regex: "new Pool\\(\\{[^}]*password\\s*:\\s*['\"][^'\"]{1,64}['\"]|postgres://[^:]+:[^@]+@"
+    suggestion: "Load connection config from DATABASE_URL environment variable"
+
+  - id: registry/pg/tls/ssl-disabled
+    title: "PostgreSQL connection with SSL disabled"
+    cwe: CWE-319
+    severity: high
+    pattern_type: regex
+    regex: "ssl\\s*:\\s*false|rejectUnauthorized\\s*:\\s*false"
+    suggestion: "Use ssl: { rejectUnauthorized: true, ca: ... } for PostgreSQL connections"
+
+  - id: registry/pg/sqli/format-user
+    title: "SQL Injection via pg-format with user data"
+    cwe: CWE-89
+    severity: high
+    pattern_type: taint_sink
+    sinks:
+      - format('SELECT %I', req.
+      - pgFormat('SELECT %L', req.
+    suggestion: "Use %L for literal values and %I for identifiers, but validate identifier values"
+
+  - id: registry/pg/sqli/dynamic-table-name
+    title: "SQL Injection via user-controlled table or column name"
+    cwe: CWE-89
+    severity: critical
+    pattern_type: taint_sink
+    sinks:
+      - client.query(`SELECT * FROM ${req.
+      - client.query(`SELECT * FROM ${tableName}`
+    suggestion: "Validate table/column names against an allowlist; use pg-format %I for identifiers"
+
+  - id: registry/pg/dos/no-pool-limit
+    title: "pg Pool without max connection limit"
+    cwe: CWE-400
+    severity: medium
+    pattern_type: regex
+    regex: "new Pool\\(\\{(?!.*max)"
+    suggestion: "Set max: new Pool({ max: 10, ... })"
+
+  - id: registry/pg/sqli/unnested-order
+    title: "SQL Injection via ORDER BY with user column"
+    cwe: CWE-89
+    severity: high
+    pattern_type: taint_sink
+    sinks:
+      - `ORDER BY ${req.query.
+      - `ORDER BY ${req.body.
+    suggestion: "Validate sort column against an allowlist; never interpolate user data into ORDER BY"

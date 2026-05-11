@@ -1,0 +1,237 @@
+language: python
+framework: boto3_aws
+version: "1.0"
+description: "AWS boto3 security rules: IAM misconfig, S3 exposure, secrets, and credential handling"
+rules:
+  - id: registry/boto3/s3/bucket-public-acl
+    title: "S3 bucket or object set to public-read ACL"
+    cwe: CWE-284
+    severity: critical
+    pattern_type: taint_sink
+    sinks:
+      - ACL='public-read'
+      - ACL="public-read"
+      - ACL='public-read-write'
+      - ACL="public-read-write"
+    suggestion: "Use bucket policies with explicit IP restrictions instead of public ACLs"
+
+  - id: registry/boto3/s3/presigned-url-long-expiry
+    title: "Pre-signed S3 URL with excessive expiry"
+    cwe: CWE-284
+    severity: medium
+    pattern_type: taint_sink
+    sinks:
+      - generate_presigned_url(
+      - ExpiresIn=86400
+      - ExpiresIn=604800
+    suggestion: "Use short expiry times (300-3600 seconds) for pre-signed URLs"
+
+  - id: registry/boto3/s3/get-object-user-key
+    title: "SSRF/traversal via S3 GetObject with user-controlled key"
+    cwe: CWE-22
+    severity: high
+    pattern_type: taint_sink
+    sinks:
+      - s3.get_object(Bucket=
+      - s3_client.get_object(Bucket=
+    suggestion: "Validate S3 key against an allowlist; never allow user data as the key directly"
+
+  - id: registry/boto3/s3/put-object-no-encryption
+    title: "S3 PutObject without server-side encryption"
+    cwe: CWE-311
+    severity: high
+    pattern_type: taint_sink
+    sinks:
+      - s3.put_object(
+      - s3_client.put_object(
+    suggestion: "Add ServerSideEncryption='AES256' or SSEKMSKeyId to all PutObject calls"
+
+  - id: registry/boto3/iam/star-action
+    title: "IAM policy grants wildcard action (*)"
+    cwe: CWE-272
+    severity: critical
+    pattern_type: regex
+    regex: "['\"]Action['\"]\\s*:\\s*['\"]\\*['\"]"
+    suggestion: "Use least-privilege IAM actions; replace '*' with specific API actions"
+
+  - id: registry/boto3/iam/star-resource
+    title: "IAM policy applies to all resources (*)"
+    cwe: CWE-272
+    severity: high
+    pattern_type: regex
+    regex: "['\"]Resource['\"]\\s*:\\s*['\"]\\*['\"]"
+    suggestion: "Specify explicit resource ARNs instead of '*'"
+
+  - id: registry/boto3/iam/admin-policy
+    title: "IAM AdministratorAccess policy attached"
+    cwe: CWE-272
+    severity: critical
+    pattern_type: taint_sink
+    sinks:
+      - PolicyArn='arn:aws:iam::aws:policy/AdministratorAccess'
+      - PolicyArn="arn:aws:iam::aws:policy/AdministratorAccess"
+    suggestion: "Grant only the minimum required permissions"
+
+  - id: registry/boto3/credentials/hardcoded-keys
+    title: "Hardcoded AWS access key in source"
+    cwe: CWE-798
+    severity: critical
+    pattern_type: regex
+    regex: "(?:aws_access_key_id|AWS_ACCESS_KEY_ID)\\s*[=:]\\s*['\"]AKIA[A-Z0-9]{16}['\"]"
+    suggestion: "Use IAM roles or environment variables; never hardcode AWS credentials"
+
+  - id: registry/boto3/credentials/hardcoded-secret
+    title: "Hardcoded AWS secret access key"
+    cwe: CWE-798
+    severity: critical
+    pattern_type: regex
+    regex: "(?:aws_secret_access_key|AWS_SECRET_ACCESS_KEY)\\s*[=:]\\s*['\"][A-Za-z0-9/+]{40}['\"]"
+    suggestion: "Use IAM roles, AWS SSO, or parameter store for credential management"
+
+  - id: registry/boto3/ssm/get-parameter-no-decrypt
+    title: "SSM SecureString retrieved without decryption"
+    cwe: CWE-312
+    severity: medium
+    pattern_type: taint_sink
+    sinks:
+      - ssm.get_parameter(Name=
+      - ssm.get_parameters(Names=
+    suggestion: "Add WithDecryption=True for SecureString parameters; store secrets in SSM"
+
+  - id: registry/boto3/secretsmanager/secret-in-log
+    title: "Secret retrieved from SecretsManager and logged"
+    cwe: CWE-532
+    severity: high
+    pattern_type: taint_sink
+    sinks:
+      - print(secret_value
+      - logger.info(secret_value
+      - logger.debug(secret_value
+    suggestion: "Never log secret values; use them directly and let them be garbage collected"
+
+  - id: registry/boto3/ec2/security-group-open
+    title: "Security group opens port to 0.0.0.0/0"
+    cwe: CWE-284
+    severity: critical
+    pattern_type: taint_sink
+    sinks:
+      - CidrIp='0.0.0.0/0'
+      - CidrIp="0.0.0.0/0"
+      - CidrIpv6='::/0'
+    suggestion: "Restrict CIDR ranges to known IP ranges; avoid open internet access"
+
+  - id: registry/boto3/lambda/invoke-user-payload
+    title: "Lambda invoke with user-controlled payload"
+    cwe: CWE-20
+    severity: high
+    pattern_type: taint_sink
+    sinks:
+      - lambda_client.invoke(FunctionName=
+      - lambda_client.invoke(Payload=request.
+    suggestion: "Validate and sanitize payload before invoking Lambda; never pass raw request data"
+
+  - id: registry/boto3/sns/publish-user-message
+    title: "SNS publish with user-controlled message"
+    cwe: CWE-20
+    severity: medium
+    pattern_type: taint_sink
+    sinks:
+      - sns.publish(Message=request.
+      - sns.publish(Subject=request.
+    suggestion: "Validate and sanitize SNS message content; avoid injecting user data directly"
+
+  - id: registry/boto3/sqs/send-user-message
+    title: "SQS message with user-controlled body"
+    cwe: CWE-20
+    severity: medium
+    pattern_type: taint_sink
+    sinks:
+      - sqs.send_message(MessageBody=request.
+      - sqs.send_message(MessageBody=f"
+    suggestion: "Validate message content; use structured data formats (JSON) with schema validation"
+
+  - id: registry/boto3/rds/snapshot-public
+    title: "RDS snapshot made publicly accessible"
+    cwe: CWE-284
+    severity: critical
+    pattern_type: taint_sink
+    sinks:
+      - restore_db_instance_from_db_snapshot(PubliclyAccessible=True
+      - create_db_instance(PubliclyAccessible=True
+    suggestion: "Set PubliclyAccessible=False for all RDS instances"
+
+  - id: registry/boto3/s3/server-access-logging-off
+    title: "S3 bucket created without server access logging"
+    cwe: CWE-778
+    severity: medium
+    pattern_type: taint_sink
+    sinks:
+      - s3.create_bucket(
+      - s3_client.create_bucket(
+    suggestion: "Enable server access logging with put_bucket_logging() for all buckets"
+
+  - id: registry/boto3/cognito/no-mfa
+    title: "Cognito user pool created without MFA enforcement"
+    cwe: CWE-308
+    severity: high
+    pattern_type: taint_sink
+    sinks:
+      - cognito.create_user_pool(
+    suggestion: "Enable MFA enforcement: MfaConfiguration='ON' in create_user_pool"
+
+  - id: registry/boto3/kms/encrypt-user-data
+    title: "KMS encrypt with user-controlled plaintext"
+    cwe: CWE-20
+    severity: medium
+    pattern_type: taint_sink
+    sinks:
+      - kms.encrypt(KeyId=
+    suggestion: "Validate data before encrypting; ensure key policy restricts usage"
+
+  - id: registry/boto3/sts/assume-role-unrestricted
+    title: "STS AssumeRole with overly broad permissions"
+    cwe: CWE-272
+    severity: high
+    pattern_type: taint_sink
+    sinks:
+      - sts.assume_role(RoleArn=
+    suggestion: "Use ExternalId and condition keys to restrict AssumeRole usage"
+
+  - id: registry/boto3/cloudwatch/log-sensitive-metric
+    title: "CloudWatch metric contains sensitive dimension"
+    cwe: CWE-532
+    severity: medium
+    pattern_type: taint_sink
+    sinks:
+      - cloudwatch.put_metric_data(
+    suggestion: "Avoid including passwords, tokens, or PII in CloudWatch metric dimensions"
+
+  - id: registry/boto3/dynamodb/scan-full-table
+    title: "DynamoDB full table scan may expose all data"
+    cwe: CWE-200
+    severity: medium
+    pattern_type: taint_sink
+    sinks:
+      - table.scan(
+      - dynamodb.scan(
+    suggestion: "Prefer Query operations with partition key; if scan is needed, use FilterExpression"
+
+  - id: registry/boto3/s3/delete-without-versioning
+    title: "S3 object deletion on bucket without versioning"
+    cwe: CWE-20
+    severity: medium
+    pattern_type: taint_sink
+    sinks:
+      - s3.delete_object(Bucket=
+      - s3_resource.Object(
+    suggestion: "Enable bucket versioning to recover from accidental deletions"
+
+  - id: registry/boto3/ecs/container-privileged
+    title: "ECS task definition with privileged container"
+    cwe: CWE-272
+    severity: critical
+    pattern_type: taint_sink
+    sinks:
+      - 'Privileged': True
+      - "Privileged": True
+    suggestion: "Set Privileged=False; use task IAM roles instead of privileged containers"

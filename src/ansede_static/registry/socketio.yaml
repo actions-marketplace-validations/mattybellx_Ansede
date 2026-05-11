@@ -1,0 +1,122 @@
+language: python
+framework: socketio
+version: "1.0"
+description: "Socket.IO / WebSocket security rules"
+rules:
+  - id: registry/socketio/auth/no-namespace-auth
+    title: "Socket.IO namespace without authentication middleware"
+    cwe: CWE-306
+    severity: high
+    pattern_type: regex
+    regex: "@sio\\.event(?:\\(namespace=['\"][^'\"]+['\"]\\))?\\s*\\nasync def connect"
+    suggestion: "Validate auth tokens in the connect event handler and return False to reject"
+
+  - id: registry/socketio/cors/allow-all
+    title: "Socket.IO CORS allowed for all origins"
+    cwe: CWE-346
+    severity: high
+    pattern_type: regex
+    regex: "cors_allowed_origins\\s*=\\s*['\"]\\*['\"]"
+    suggestion: "Set cors_allowed_origins to an explicit list of trusted origins"
+
+  - id: registry/socketio/injection/emit-user-event
+    title: "Socket.IO emitting to user-controlled event name"
+    cwe: CWE-94
+    severity: high
+    pattern_type: taint_sink
+    sinks:
+      - sio.emit(user_event
+      - await sio.emit(request.
+      - socketio.emit(data['event']
+    suggestion: "Use a fixed allowlist of event names; never use user data as the event name"
+
+  - id: registry/socketio/injection/emit-user-room
+    title: "Socket.IO emitting to user-controlled room"
+    cwe: CWE-862
+    severity: high
+    pattern_type: taint_sink
+    sinks:
+      - sio.emit(event, room=user_
+      - sio.emit(event, to=user_
+      - await sio.emit(event, room=data[
+    suggestion: "Validate that the user has permission to target the specified room"
+
+  - id: registry/socketio/xss/broadcast-user-data
+    title: "XSS via Socket.IO broadcasting raw user HTML"
+    cwe: CWE-79
+    severity: high
+    pattern_type: taint_sink
+    sinks:
+      - await sio.emit('message', {'html': user_
+      - sio.emit('update', user_data
+    suggestion: "Escape or sanitize data before broadcasting; emit structured data, not HTML"
+
+  - id: registry/socketio/ssrf/fetch-in-handler
+    title: "SSRF via fetch/request in Socket.IO event handler"
+    cwe: CWE-918
+    severity: high
+    pattern_type: taint_sink
+    sinks:
+      - requests.get(data['url']
+      - aiohttp.ClientSession().get(data[
+    suggestion: "Validate and restrict URLs against an allowlist before making outbound requests"
+
+  - id: registry/socketio/eval/exec-in-handler
+    title: "Code Injection via eval/exec in Socket.IO handler"
+    cwe: CWE-94
+    severity: critical
+    pattern_type: taint_sink
+    sinks:
+      - eval(data[
+      - exec(data[
+      - eval(message
+    suggestion: "Never evaluate user data as code"
+
+  - id: registry/socketio/path/traversal-in-handler
+    title: "Path Traversal in Socket.IO file event handler"
+    cwe: CWE-22
+    severity: critical
+    pattern_type: taint_sink
+    sinks:
+      - open(data['path']
+      - open(data['filename']
+      - Path(data['path']
+    suggestion: "Validate and normalize paths; restrict to a safe base directory"
+
+  - id: registry/socketio/cmd/exec-in-handler
+    title: "Command Injection in Socket.IO handler"
+    cwe: CWE-78
+    severity: critical
+    pattern_type: taint_sink
+    sinks:
+      - subprocess.run(data[
+      - os.system(data[
+    suggestion: "Never pass user data from socket events to shell commands"
+
+  - id: registry/socketio/auth/session-missing
+    title: "Socket.IO handler accesses user data without session check"
+    cwe: CWE-284
+    severity: medium
+    pattern_type: regex
+    regex: "@sio\\.on\\(['\"]\\w+['\"]\\)\\s*\\nasync def \\w+\\(sid, data\\):"
+    suggestion: "Always verify session/token in each event handler before processing"
+
+  - id: registry/socketio/dos/large-payload
+    title: "No payload size check in Socket.IO handler"
+    cwe: CWE-400
+    severity: medium
+    pattern_type: taint_sink
+    sinks:
+      - async def on_message(sid, data):
+      - async def on_data(sid, data):
+    suggestion: "Check len(data) against a maximum payload size before processing"
+
+  - id: registry/socketio/injection/sql-in-handler
+    title: "SQL Injection from Socket.IO event data"
+    cwe: CWE-89
+    severity: critical
+    pattern_type: taint_sink
+    sinks:
+      - cursor.execute(f"SELECT.*{data[
+      - db.execute(f"UPDATE.*{data[
+    suggestion: "Use parameterized queries; never interpolate socket event data into SQL"

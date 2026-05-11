@@ -1,0 +1,141 @@
+language: python
+framework: celery
+version: "1.0"
+description: "Celery task queue security rules: injection, deserialization, broker credentials"
+rules:
+  - id: registry/celery/deserialization/pickle-serializer
+    title: "Celery using pickle serializer (unsafe deserialization)"
+    cwe: CWE-502
+    severity: critical
+    pattern_type: regex
+    regex: "CELERY_TASK_SERIALIZER\\s*=\\s*['\"]pickle['\"]|task_serializer\\s*=\\s*['\"]pickle['\"]"
+    suggestion: "Use JSON serializer: CELERY_TASK_SERIALIZER = 'json'"
+
+  - id: registry/celery/deserialization/accept-content-pickle
+    title: "Celery accepts pickle content type"
+    cwe: CWE-502
+    severity: critical
+    pattern_type: regex
+    regex: "CELERY_ACCEPT_CONTENT.*pickle|accept_content.*pickle"
+    suggestion: "Set CELERY_ACCEPT_CONTENT = ['json'] to prevent pickle deserialization"
+
+  - id: registry/celery/broker/hardcoded-url
+    title: "Celery broker URL hardcoded with credentials"
+    cwe: CWE-798
+    severity: critical
+    pattern_type: regex
+    regex: "(?:BROKER_URL|broker_url)\\s*=\\s*['\"](?:redis|amqp|amqps)://[^:]+:[^@]+@"
+    suggestion: "Load broker credentials from environment variables"
+
+  - id: registry/celery/broker/no-tls
+    title: "Celery broker connection without TLS"
+    cwe: CWE-319
+    severity: high
+    pattern_type: regex
+    regex: "broker_url\\s*=\\s*['\"]amqp://"
+    suggestion: "Use amqps:// for RabbitMQ or rediss:// for Redis with SSL"
+
+  - id: registry/celery/backend/hardcoded-url
+    title: "Celery result backend URL hardcoded with credentials"
+    cwe: CWE-798
+    severity: critical
+    pattern_type: regex
+    regex: "(?:CELERY_RESULT_BACKEND|result_backend)\\s*=\\s*['\"](?:redis|db|cache)://[^:]*:[^@]+@"
+    suggestion: "Load result backend credentials from environment variables"
+
+  - id: registry/celery/task/eval-in-task
+    title: "Code Injection via eval in Celery task"
+    cwe: CWE-95
+    severity: critical
+    pattern_type: taint_sink
+    sinks:
+      - eval(task_arg
+      - exec(task_arg
+      - eval(kwargs[
+    suggestion: "Never eval task arguments; validate all inputs before processing"
+
+  - id: registry/celery/task/cmd-injection
+    title: "Command Injection in Celery task"
+    cwe: CWE-78
+    severity: critical
+    pattern_type: taint_sink
+    sinks:
+      - os.system(task_arg
+      - subprocess.run(task_arg
+      - subprocess.call(task_arg
+    suggestion: "Use subprocess with a list of arguments and shell=False"
+
+  - id: registry/celery/task/ssrf-in-task
+    title: "SSRF via requests in Celery task with user URL"
+    cwe: CWE-918
+    severity: high
+    pattern_type: taint_sink
+    sinks:
+      - requests.get(kwargs[
+      - requests.post(kwargs[
+      - requests.get(url=
+    suggestion: "Validate URLs against an allowlist before making outbound requests from tasks"
+
+  - id: registry/celery/task/no-rate-limit
+    title: "Celery task without rate limiting (resource exhaustion)"
+    cwe: CWE-400
+    severity: medium
+    pattern_type: regex
+    regex: "@(?:app|celery)\\.task\\((?!.*rate_limit)"
+    suggestion: "Add rate_limit to tasks: @app.task(rate_limit='10/m')"
+
+  - id: registry/celery/config/always-eager-production
+    title: "CELERY_ALWAYS_EAGER=True bypasses async execution"
+    cwe: CWE-20
+    severity: medium
+    pattern_type: regex
+    regex: "(?:CELERY_ALWAYS_EAGER|task_always_eager)\\s*=\\s*True"
+    suggestion: "Set CELERY_ALWAYS_EAGER=False in production"
+
+  - id: registry/celery/task/sensitive-in-args
+    title: "Password or token passed as Celery task argument"
+    cwe: CWE-312
+    severity: high
+    pattern_type: taint_sink
+    sinks:
+      - send_task('password=
+      - apply_async(kwargs={'password':
+      - apply_async(args=[password,
+    suggestion: "Pass sensitive data via secrets manager; never include credentials in task args"
+
+  - id: registry/celery/broker/redis-no-password
+    title: "Redis broker without password authentication"
+    cwe: CWE-306
+    severity: high
+    pattern_type: regex
+    regex: "broker_url\\s*=\\s*['\"]redis://(?!.*:[^@]+@)"
+    suggestion: "Enable Redis AUTH: redis://:password@host:port/db"
+
+  - id: registry/celery/deserialization/yaml-task
+    title: "Unsafe YAML deserialization in Celery task"
+    cwe: CWE-502
+    severity: critical
+    pattern_type: taint_sink
+    sinks:
+      - yaml.load(task_arg
+      - yaml.load(kwargs[
+    suggestion: "Use yaml.safe_load() with strict schema validation"
+
+  - id: registry/celery/path/file-task-traversal
+    title: "Path Traversal in Celery file processing task"
+    cwe: CWE-22
+    severity: high
+    pattern_type: taint_sink
+    sinks:
+      - open(kwargs['filename'
+      - open(kwargs["filename"
+      - open(task_arg
+    suggestion: "Validate file paths against a safe base directory in task handlers"
+
+  - id: registry/celery/config/ignore-result-sensitive
+    title: "Sensitive task results stored in backend unencrypted"
+    cwe: CWE-312
+    severity: medium
+    pattern_type: regex
+    regex: "result_backend\\s*=\\s*['\"](?:redis|db)://"
+    suggestion: "Encrypt sensitive results or use ignore_result=True for tasks with sensitive output"

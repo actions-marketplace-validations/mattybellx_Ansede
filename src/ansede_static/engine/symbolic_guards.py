@@ -21,7 +21,7 @@ from __future__ import annotations
 import ast
 import re
 from dataclasses import dataclass, field
-from ansede_static._types import Finding
+from ansede_static._types import Finding, Severity
 
 
 @dataclass
@@ -67,6 +67,46 @@ _INPUT_VALIDATION_GUARD_RE = re.compile(
     re.IGNORECASE,
 )
 
+_PATH_BOUNDARY_GUARD_RE = re.compile(
+    r'(?:startswith\s*\(|startsWith\s*\(|commonpath\s*\(|is_relative_to\s*\()',
+    re.IGNORECASE,
+)
+
+_EXPLICIT_AUTH_TEST_RE = re.compile(
+    r'(?:\buser\.is_authenticated\b|\brequest\.user\.is_authenticated\b|'
+    r'\bcurrent_user\.is_authenticated\b|\btoken\s+is\s+not\s+None\b|'
+    r'\bauth(?:entication|orized?)?_check\s*\(|\bpermission_check\s*\(|'
+    r'\bhas_permission\s*\(|\brequire_auth\s*\(|\bensure_auth\s*\()',
+    re.IGNORECASE,
+)
+
+_GUARD_POSITIVE_SIGNAL_RE = re.compile(
+    r'\bis_authenticated\b|\bis not None\b|\bpermission\b|\bauthoriz|\bauth\b',
+    re.IGNORECASE,
+)
+
+_JS_INLINE_AUTH_GUARD_RE = re.compile(
+    r'(?:req\.user|ctx\.state\.user|request\.user|currentUser|current_user|'
+    r'isAuthenticated\s*\(|hasPermission\s*\(|permissionCheck\s*\()',
+    re.IGNORECASE,
+)
+
+_JS_RATE_LIMIT_BIND_RE = re.compile(
+    r'\b(?:const|let|var)\s+([A-Za-z_$][\w$]*)\s*=\s*(?:\w+\.)?rateLimit\s*\(',
+    re.IGNORECASE,
+)
+
+_JS_ROUTE_APPLY_RE = re.compile(
+    r'\b(?:app|router|server|fastify)\.(?:use|get|post|put|patch|delete|all|route)\s*\(',
+    re.IGNORECASE,
+)
+
+_DENY_ACCESS_RE = re.compile(
+    r'(?:abort\s*\(\s*403\s*\)|return\s+403\b|raise\s+PermissionDenied\b|'
+    r'forbidden\s*\(|deny\s*\(|unauthorized\s*\()',
+    re.IGNORECASE,
+)
+
 
 def _extract_python_guards(tree: ast.AST, source_lines: list[str]) -> list[GuardInfo]:
     """Extract security guard information from Python AST."""
@@ -101,6 +141,12 @@ def _extract_python_guards(tree: ast.AST, source_lines: list[str]) -> list[Guard
                     kind="input_validation", line=node.lineno,
                     protects_lines=body_lines,
                 ))
+            if _PATH_BOUNDARY_GUARD_RE.search(test_text):
+                body_lines = set(range(node.lineno, node.end_lineno + 1)) if node.end_lineno else set()
+                guards.append(GuardInfo(
+                    kind="path_boundary", line=node.lineno,
+                    protects_lines=body_lines,
+                ))
             self.generic_visit(node)
 
         def visit_FunctionDef(self, node: ast.FunctionDef) -> None:
@@ -131,13 +177,158 @@ def _extract_python_guards(tree: ast.AST, source_lines: list[str]) -> list[Guard
     return guards
 
 
+def _build_parent_map(tree: ast.AST) -> dict[int, ast.AST]:
+    parents: dict[int, ast.AST] = {}
+    for parent in ast.walk(tree):
+        for child in ast.iter_child_nodes(parent):
+            parents[id(child)] = parent
+    return parents
+
+
+def _is_positive_guard_condition(test_text: str) -> bool:
+    if not test_text:
+        return False
+    if not _EXPLICIT_AUTH_TEST_RE.search(test_text):
+        return False
+    stripped = test_text.strip()
+    if stripped.startswith("not "):
+        return False
+    if re.search(r'!=\s*None\b|==\s*None\b', stripped):
+        return False
+    return bool(_GUARD_POSITIVE_SIGNAL_RE.search(stripped))
+
+
+def _local_node_has_auth_decorator_signal(node: ast.AST) -> bool:
+    for deco in getattr(node, "decorator_list", ()):
+        deco_text = ast.unparse(deco) if hasattr(ast, "unparse") else ""
+        if _AUTH_GUARD_RE.search(deco_text) or _EXPLICIT_AUTH_TEST_RE.search(deco_text):
+            return True
+    return False
+
+
+def _collect_python_guard_kinds_for_line(tree: ast.AST, line: int) -> set[str]:
+    try:
+        parents = _build_parent_map(tree)
+    except Exception:
+        return set()
+
+    guarded: set[str] = set()
+    candidate_nodes = [
+        node for node in ast.walk(tree)
+        if getattr(node, "lineno", None) == line
+    ]
+    for node in candidate_nodes:
+        current = node
+        while id(current) in parents:
+            parent = parents[id(current)]
+            if isinstance(parent, ast.If):
+                test_text = ast.unparse(parent.test) if hasattr(ast, "unparse") else ""
+                if _is_positive_guard_condition(test_text):
+                    guarded.add("auth_check")
+                if _OWNERSHIP_GUARD_RE.search(test_text):
+                    guarded.add("ownership_check")
+                if _INPUT_VALIDATION_GUARD_RE.search(test_text):
+                    guarded.add("input_validation")
+                if _PATH_BOUNDARY_GUARD_RE.search(test_text):
+                    guarded.add("path_boundary")
+            elif isinstance(parent, (ast.FunctionDef, ast.AsyncFunctionDef)):
+                for deco in parent.decorator_list:
+                    deco_text = ast.unparse(deco) if hasattr(ast, "unparse") else ""
+                    if _AUTH_GUARD_RE.search(deco_text):
+                        guarded.add("auth_check")
+            current = parent
+    return guarded
+
+
+def _statements_deny_access(statements: list[ast.stmt]) -> bool:
+    for statement in statements:
+        text = ast.unparse(statement) if hasattr(ast, "unparse") else ""
+        if _DENY_ACCESS_RE.search(text):
+            return True
+    return False
+
+
+def _function_scope_guard_kinds(tree: ast.AST, line: int) -> set[str]:
+    guarded: set[str] = set()
+    for node in ast.walk(tree):
+        if not isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
+            continue
+        start = getattr(node, "lineno", None)
+        end = getattr(node, "end_lineno", None)
+        if start is None or end is None or not (start <= line <= end):
+            continue
+        statements = list(getattr(node, "body", ()))
+        for idx, stmt in enumerate(statements):
+            if not isinstance(stmt, ast.If):
+                continue
+            test_text = ast.unparse(stmt.test) if hasattr(ast, "unparse") else ""
+            has_auth_signal = bool(_EXPLICIT_AUTH_TEST_RE.search(test_text))
+            has_ownership_signal = bool(_OWNERSHIP_GUARD_RE.search(test_text))
+            has_input_signal = bool(_INPUT_VALIDATION_GUARD_RE.search(test_text))
+            has_path_boundary_signal = bool(_PATH_BOUNDARY_GUARD_RE.search(test_text))
+            has_negative_guard = bool(re.search(r'\bnot\b|!=|is not|not in', test_text))
+            following_statements = statements[idx + 1:]
+            if has_auth_signal:
+                if has_negative_guard and _statements_deny_access(stmt.body):
+                    guarded.add("auth_check")
+                elif not has_negative_guard and (
+                    _statements_deny_access(stmt.orelse)
+                    or _statements_deny_access(following_statements)
+                ):
+                    guarded.add("auth_check")
+                elif _is_positive_guard_condition(test_text):
+                    guarded.add("auth_check")
+            if has_ownership_signal:
+                guarded.add("ownership_check")
+            if has_input_signal:
+                guarded.add("input_validation")
+            if has_path_boundary_signal:
+                guarded.add("path_boundary")
+        if _local_node_has_auth_decorator_signal(node):
+            guarded.add("auth_check")
+        break
+    return guarded
+
+
+def _severity_downgrade(severity: Severity) -> Severity:
+    if severity == Severity.CRITICAL:
+        return Severity.HIGH
+    if severity == Severity.HIGH:
+        return Severity.MEDIUM
+    if severity == Severity.MEDIUM:
+        return Severity.LOW
+    return severity
+
+
 def _extract_js_guards(code: str, filename: str) -> list[GuardInfo]:
     """Extract security guard information from JavaScript source."""
     guards: list[GuardInfo] = []
     lines = code.splitlines()
+    rate_limit_aliases: set[str] = set()
+
+    def _route_scope(start_line: int) -> set[int]:
+        text = lines[start_line - 1]
+        if ".use(" in text and "=>" not in text and "function" not in text:
+            return set(range(start_line, min(start_line + 20, len(lines) + 1)))
+
+        protected = {start_line}
+        balance = text.count("{") - text.count("}")
+        saw_block = balance > 0
+        for current in range(start_line + 1, len(lines) + 1):
+            protected.add(current)
+            line_text = lines[current - 1]
+            balance += line_text.count("{") - line_text.count("}")
+            saw_block = saw_block or (line_text.count("{") > 0)
+            if saw_block and balance <= 0:
+                break
+        return protected
 
     for i, line in enumerate(lines, 1):
         stripped = line.strip()
+
+        alias_match = _JS_RATE_LIMIT_BIND_RE.search(stripped)
+        if alias_match:
+            rate_limit_aliases.add(alias_match.group(1))
 
         if _AUTH_GUARD_RE.search(stripped):
             guards.append(GuardInfo(
@@ -151,10 +342,19 @@ def _extract_js_guards(code: str, filename: str) -> list[GuardInfo]:
                 protects_lines=set(range(i, min(i + 10, len(lines) + 1))),
             ))
 
-        if _RATE_LIMIT_GUARD_RE.search(stripped):
+        direct_rate_limit_use = "@ratelimit" in stripped.lower() or (
+            _JS_ROUTE_APPLY_RE.search(stripped)
+            and (
+                "rateLimit(" in stripped
+                or any(re.search(rf'\b{re.escape(alias)}\b', stripped) for alias in rate_limit_aliases)
+                or "throttle" in stripped.lower()
+            )
+        )
+
+        if direct_rate_limit_use:
             guards.append(GuardInfo(
                 kind="rate_limit", line=i,
-                protects_lines=set(range(i, min(i + 10, len(lines) + 1))),
+                protects_lines=_route_scope(i),
             ))
 
         if _OWNERSHIP_GUARD_RE.search(stripped):
@@ -169,7 +369,39 @@ def _extract_js_guards(code: str, filename: str) -> list[GuardInfo]:
                 protects_lines=set(range(i, min(i + 10, len(lines) + 1))),
             ))
 
+        if _PATH_BOUNDARY_GUARD_RE.search(stripped):
+            guards.append(GuardInfo(
+                kind="path_boundary", line=i,
+                protects_lines=set(range(i, min(i + 10, len(lines) + 1))),
+            ))
+
     return guards
+
+
+def _collect_js_guard_kinds_for_line(code: str, line: int) -> set[str]:
+    lines = code.splitlines()
+    guarded: set[str] = set()
+    if line <= 0 or line > len(lines):
+        return guarded
+
+    open_blocks = 0
+    for idx in range(line - 1, -1, -1):
+        text = lines[idx].strip()
+        open_blocks += lines[idx].count("{") - lines[idx].count("}")
+        if not text:
+            continue
+        if text.startswith("if") or text.startswith("if ") or text.startswith("if("):
+            if _JS_INLINE_AUTH_GUARD_RE.search(text):
+                guarded.add("auth_check")
+            if _OWNERSHIP_GUARD_RE.search(text):
+                guarded.add("ownership_check")
+            if _INPUT_VALIDATION_GUARD_RE.search(text):
+                guarded.add("input_validation")
+            if _PATH_BOUNDARY_GUARD_RE.search(text):
+                guarded.add("path_boundary")
+            if open_blocks <= 0:
+                break
+    return guarded
 
 
 # ── Guard-aware finding adjustment ─────────────────────────────────────
@@ -196,6 +428,9 @@ _GUARD_CWE_DOWNGRADE_MAP: dict[str, dict[str, float]] = {
         "CWE-434": 0.0,   # File upload — validation present
         "CWE-22": 0.10,   # Path traversal — input validated
         "CWE-89": 0.10,   # SQLi — input validated
+    },
+    "path_boundary": {
+        "CWE-22": 0.0,    # Path traversal — resolved path is checked against a base dir
     },
 }
 
@@ -255,9 +490,26 @@ def analyze_guards_python(
     except SyntaxError:
         return findings
     guards = _extract_python_guards(tree, code.splitlines())
-    if not guards:
-        return findings
-    return adjust_findings_from_guards(findings, guards)
+    adjusted = adjust_findings_from_guards(findings, guards) if guards else list(findings)
+    final: list[Finding] = []
+    for finding in adjusted:
+        if not finding.line:
+            final.append(finding)
+            continue
+        guard_kinds = _collect_python_guard_kinds_for_line(tree, finding.line) | _function_scope_guard_kinds(tree, finding.line)
+        if finding.cwe == "CWE-862" and "auth_check" in guard_kinds:
+            continue
+        if finding.cwe == "CWE-639" and "ownership_check" in guard_kinds:
+            continue
+        if finding.cwe == "CWE-22" and "path_boundary" in guard_kinds:
+            continue
+        if finding.cwe in {"CWE-285", "CWE-287"} and "auth_check" in guard_kinds:
+            finding.confidence = min(finding.confidence, 0.15)
+            finding.severity = _severity_downgrade(finding.severity)
+            if "AST guard ancestry" not in finding.description:
+                finding.description = f"{finding.description} (AST guard ancestry indicates an inline auth check before the sink)"
+        final.append(finding)
+    return final
 
 
 def analyze_guards_js(
@@ -268,6 +520,18 @@ def analyze_guards_js(
 ) -> list[Finding]:
     """JS entry point: extract guards, adjust findings."""
     guards = _extract_js_guards(code, filename)
-    if not guards:
-        return findings
-    return adjust_findings_from_guards(findings, guards)
+    adjusted = adjust_findings_from_guards(findings, guards) if guards else list(findings)
+    final: list[Finding] = []
+    for finding in adjusted:
+        if not finding.line:
+            final.append(finding)
+            continue
+        guard_kinds = _collect_js_guard_kinds_for_line(code, finding.line)
+        if finding.cwe == "CWE-862" and "auth_check" in guard_kinds:
+            continue
+        if finding.cwe == "CWE-639" and "ownership_check" in guard_kinds:
+            continue
+        if finding.cwe == "CWE-22" and "path_boundary" in guard_kinds:
+            continue
+        final.append(finding)
+    return final

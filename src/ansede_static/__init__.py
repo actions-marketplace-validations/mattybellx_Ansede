@@ -44,7 +44,41 @@ _JAVA_EXTS = frozenset({".java"})
 _CSHARP_EXTS = frozenset({".cs"})
 
 
-def scan_file(path: str | Path, config: AnsedeConfig | None = None, *, js_backend: str = "auto") -> AnalysisResult:
+def _apply_runtime_and_registry_rules(
+    code: str,
+    *,
+    filename: str,
+    language: str,
+    runtime_rules: list[object],
+    result: AnalysisResult,
+    include_registry_rules: bool,
+) -> None:
+    if not code or not result.language:
+        return
+
+    applicable_rules = list(runtime_rules)
+    if include_registry_rules:
+        try:
+            from ansede_static.registry.sharded_loader import load_custom_rules_for_code  # noqa: PLC0415
+
+            if language in {"python", "javascript", "java", "csharp"}:
+                applicable_rules.extend(load_custom_rules_for_code(code, language))
+        except Exception:
+            pass
+
+    if applicable_rules:
+        result.findings.extend(
+            _yaml_rules.apply_custom_rules(code, filename or "<stdin>", result.language, applicable_rules)
+        )
+
+
+def scan_file(
+    path: str | Path,
+    config: AnsedeConfig | None = None,
+    *,
+    js_backend: str = "auto",
+    include_registry_rules: bool = False,
+) -> AnalysisResult:
     """
     Scan a file and return an AnalysisResult.
 
@@ -54,6 +88,7 @@ def scan_file(path: str | Path, config: AnsedeConfig | None = None, *, js_backen
     p = Path(path)
     ext = p.suffix.lower()
     runtime_rules = _yaml_rules.load_runtime_rules(config=config, workspace_root=Path.cwd())
+    code = p.read_text(encoding="utf-8", errors="replace")
 
     # Create a shared GlobalGraph for IFDS-based interprocedural taint transfer.
     # Both Python and JS analyzers feed summaries into it and query it during
@@ -69,33 +104,28 @@ def scan_file(path: str | Path, config: AnsedeConfig | None = None, *, js_backen
         if ext in _PYTHON_EXTS:
             result = _py_file(p, global_graph=shared_graph)
         elif ext in _JS_EXTS:
-            code = p.read_text(encoding="utf-8", errors="replace")
             result, _ = run_js_analysis(code, filename=str(p), requested_backend=js_backend, global_graph=shared_graph)
         elif ext in _GO_EXTS:
             from ansede_static.go_engine.go_analyzer import run_go_analysis
-            code = p.read_text(encoding="utf-8", errors="replace")
             result = run_go_analysis(code, filename=str(p))
         elif ext in _JAVA_EXTS:
             from ansede_static.java_analyzer import analyze_java
-            code = p.read_text(encoding="utf-8", errors="replace")
             result = analyze_java(code, filename=str(p))
         elif ext in _CSHARP_EXTS:
             from ansede_static.csharp_analyzer import analyze_csharp
-            code = p.read_text(encoding="utf-8", errors="replace")
             result = analyze_csharp(code, filename=str(p))
         else:
             raise ValueError(
                 f"Unsupported file extension: {ext!r}. Supported: .py, .js, .ts, .go, .java, .cs (and variants)."
             )
-    if runtime_rules and result.language:
-        try:
-            runtime_code = p.read_text(encoding="utf-8", errors="replace")
-        except OSError:
-            runtime_code = ""
-        if runtime_code:
-            result.findings.extend(
-                _yaml_rules.apply_custom_rules(runtime_code, str(p), result.language, runtime_rules)
-            )
+    _apply_runtime_and_registry_rules(
+        code,
+        filename=str(p),
+        language=result.language,
+        runtime_rules=runtime_rules,
+        result=result,
+        include_registry_rules=include_registry_rules,
+    )
     apply_config_to_results([result], config)
     return result
 
@@ -107,6 +137,7 @@ def scan_code(
     config: AnsedeConfig | None = None,
     *,
     js_backend: str = "auto",
+    include_registry_rules: bool = False,
 ) -> AnalysisResult:
     """
     Scan source code provided as a string.
@@ -138,9 +169,13 @@ def scan_code(
             raise ValueError(
                 f"Unsupported language: {language!r}. Must be 'python', 'javascript', 'go', 'java', or 'csharp'."
             )
-    if runtime_rules and result.language:
-        result.findings.extend(
-            _yaml_rules.apply_custom_rules(code, filename or "<stdin>", result.language, runtime_rules)
-        )
+    _apply_runtime_and_registry_rules(
+        code,
+        filename=filename or "<stdin>",
+        language=result.language,
+        runtime_rules=runtime_rules,
+        result=result,
+        include_registry_rules=include_registry_rules,
+    )
     apply_config_to_results([result], config)
     return result

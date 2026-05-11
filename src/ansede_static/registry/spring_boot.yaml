@@ -1,0 +1,116 @@
+language: java
+framework: spring_boot
+version: "1.0"
+description: "Spring Boot framework security rules"
+rules:
+  - id: registry/spring/sqli/jdbctemplate-user
+    title: "SQL Injection via JdbcTemplate.query() with user string"
+    cwe: CWE-89
+    severity: critical
+    pattern_type: taint_sink
+    sinks:
+      - jdbcTemplate.query("SELECT
+      - jdbcTemplate.queryForObject("SELECT
+      - jdbcTemplate.update("UPDATE
+    suggestion: "Use JdbcTemplate with ? placeholders: jdbcTemplate.query('SELECT * FROM t WHERE id = ?', id)"
+
+  - id: registry/spring/sqli/hibernate-hql-user
+    title: "HQL Injection via Hibernate createQuery with user string"
+    cwe: CWE-89
+    severity: critical
+    pattern_type: taint_sink
+    sinks:
+      - session.createQuery("from
+      - em.createQuery("SELECT
+      - entityManager.createQuery("from
+    suggestion: "Use named parameters: session.createQuery('FROM User WHERE id = :id').setParameter('id', id)"
+
+  - id: registry/spring/auth/missing-preauthorize
+    title: "Spring endpoint without @PreAuthorize or @Secured"
+    cwe: CWE-306
+    severity: high
+    pattern_type: regex
+    regex: "@(?:GetMapping|PostMapping|PutMapping|DeleteMapping|RequestMapping)(?!.*@PreAuthorize|.*@Secured)"
+    suggestion: "Add @PreAuthorize('hasRole(ADMIN)') or @Secured('ROLE_USER') to protect endpoints"
+
+  - id: registry/spring/idor/repository-findbyid
+    title: "IDOR via repository.findById without ownership check"
+    cwe: CWE-639
+    severity: high
+    pattern_type: taint_sink
+    sinks:
+      - repository.findById(id
+      - userRepo.findById(Long.parseLong(
+    suggestion: "Verify the authenticated user owns the requested resource before returning it"
+
+  - id: registry/spring/ssrf/resttemplate-user
+    title: "SSRF via RestTemplate with user-controlled URL"
+    cwe: CWE-918
+    severity: high
+    pattern_type: taint_sink
+    sinks:
+      - restTemplate.getForObject(url,
+      - restTemplate.postForObject(userUrl,
+    suggestion: "Validate URLs against an allowlist before using RestTemplate"
+
+  - id: registry/spring/credentials/hardcoded
+    title: "Hardcoded database or API credentials in Spring config"
+    cwe: CWE-798
+    severity: critical
+    pattern_type: regex
+    regex: "spring\\.datasource\\.password\\s*=\\s*[^$#\\s]{1,64}"
+    suggestion: "Use environment variables or Spring Vault for credentials"
+
+  - id: registry/spring/deserialization/java-object
+    title: "Unsafe Java Object Deserialization"
+    cwe: CWE-502
+    severity: critical
+    pattern_type: taint_sink
+    sinks:
+      - ObjectInputStream(request.getInputStream
+      - new ObjectInputStream(
+    suggestion: "Use a safe deserialization library or implement a JEP-290 filter"
+
+  - id: registry/spring/csrf/disabled
+    title: "CSRF protection disabled in Spring Security"
+    cwe: CWE-352
+    severity: high
+    pattern_type: regex
+    regex: "\\.csrf\\(\\)\\.disable\\(\\)"
+    suggestion: "Enable CSRF protection or use stateless JWT authentication with proper Origin checks"
+
+  - id: registry/spring/cors/allow-all
+    title: "Spring CORS configured for all origins"
+    cwe: CWE-346
+    severity: high
+    pattern_type: regex
+    regex: "@CrossOrigin\\(origins\\s*=\\s*['\"]\\*['\"]|allowedOrigins\\(\"\\*\"\\)"
+    suggestion: "Restrict allowed origins to known trusted domains"
+
+  - id: registry/spring/xss/requestparam-reflected
+    title: "XSS via RequestParam reflected without encoding"
+    cwe: CWE-79
+    severity: high
+    pattern_type: taint_sink
+    sinks:
+      - return "Hello " + name
+      - model.addAttribute("msg", userInput
+    suggestion: "Use HtmlUtils.htmlEscape() or Thymeleaf's auto-escaping"
+
+  - id: registry/spring/actuator/exposed
+    title: "Spring Actuator endpoints exposed without security"
+    cwe: CWE-200
+    severity: high
+    pattern_type: regex
+    regex: "management\\.endpoints\\.web\\.exposure\\.include\\s*=\\s*\\*"
+    suggestion: "Restrict actuator exposure: management.endpoints.web.exposure.include=health,info"
+
+  - id: registry/spring/path/traversal
+    title: "Path Traversal via user-controlled file path in Spring"
+    cwe: CWE-22
+    severity: critical
+    pattern_type: taint_sink
+    sinks:
+      - new File(request.getParameter(
+      - Paths.get(request.getParameter(
+    suggestion: "Normalize paths and verify they start with the allowed base directory"

@@ -1,0 +1,184 @@
+language: python
+framework: xml_parsers
+version: "1.0"
+description: "XML/HTML parser security rules: XXE, XPath injection, billion laughs, and SSRF"
+rules:
+  - id: registry/xml/xxe/etree-parse-user
+    title: "XXE via xml.etree.ElementTree.parse with user data"
+    cwe: CWE-611
+    severity: critical
+    pattern_type: taint_sink
+    sinks:
+      - ElementTree.parse(
+      - ET.parse(
+      - ElementTree.fromstring(
+      - ET.fromstring(
+      - ElementTree.XML(
+      - ET.XML(
+    suggestion: "Use defusedxml.ElementTree to block external entity expansion"
+
+  - id: registry/xml/xxe/minidom-user
+    title: "XXE via xml.dom.minidom.parseString"
+    cwe: CWE-611
+    severity: critical
+    pattern_type: taint_sink
+    sinks:
+      - minidom.parseString(
+      - minidom.parse(
+    suggestion: "Use defusedxml.minidom.parseString() instead"
+
+  - id: registry/xml/xxe/sax-user
+    title: "XXE via xml.sax.parseString with user data"
+    cwe: CWE-611
+    severity: critical
+    pattern_type: taint_sink
+    sinks:
+      - sax.parseString(
+      - sax.parse(
+      - xml.sax.parseString(
+    suggestion: "Use defusedxml.sax.parseString() or disable FEATURE_EXTERNAL_GES"
+
+  - id: registry/xml/xxe/expat-user
+    title: "XXE via xml.parsers.expat with user data"
+    cwe: CWE-611
+    severity: critical
+    pattern_type: taint_sink
+    sinks:
+      - expat.ParserCreate(
+      - xml.parsers.expat.ParserCreate(
+    suggestion: "Use defusedxml or lxml with resolve_entities=False"
+
+  - id: registry/xml/xxe/lxml-etree-user
+    title: "XXE via lxml.etree.parse without safe parser"
+    cwe: CWE-611
+    severity: critical
+    pattern_type: taint_sink
+    sinks:
+      - lxml.etree.parse(
+      - etree.parse(
+      - etree.fromstring(
+      - etree.XML(
+    suggestion: "Use lxml.etree.XMLParser(resolve_entities=False, no_network=True)"
+
+  - id: registry/xml/xpath/injection
+    title: "XPath Injection via string concatenation"
+    cwe: CWE-643
+    severity: critical
+    pattern_type: taint_sink
+    sinks:
+      - .xpath(f"
+      - .xpath("//user[name='
+      - .xpath('//user[name=
+      - .find(f"
+    suggestion: "Use XPath variables/parameterization; never concatenate user data into XPath expressions"
+
+  - id: registry/xml/xxe/billion-laughs
+    title: "Billion Laughs DoS via recursive entity expansion"
+    cwe: CWE-400
+    severity: high
+    pattern_type: regex
+    regex: "<!ENTITY\\s+\\w+\\s+['\"]&\\w+;&\\w+;"
+    suggestion: "Disable DTD processing entirely; use defusedxml"
+
+  - id: registry/xml/xslt/user-stylesheet
+    title: "XSLT injection via user-controlled stylesheet"
+    cwe: CWE-94
+    severity: critical
+    pattern_type: taint_sink
+    sinks:
+      - etree.XSLT(user_
+      - lxml.etree.XSLT(request.
+      - transform = XSLT(
+    suggestion: "Only apply trusted, pre-defined XSLT stylesheets; never accept user-supplied XSLT"
+
+  - id: registry/xml/ssrf/xmlrpc-user
+    title: "SSRF via xmlrpc.client with user server URL"
+    cwe: CWE-918
+    severity: high
+    pattern_type: taint_sink
+    sinks:
+      - xmlrpc.client.ServerProxy(user_
+      - xmlrpc.client.ServerProxy(request.
+      - ServerProxy(user_
+    suggestion: "Validate XML-RPC server URLs against an allowlist"
+
+  - id: registry/xml/html/bleach-clean-missing
+    title: "User HTML rendered without sanitization"
+    cwe: CWE-79
+    severity: critical
+    pattern_type: taint_sink
+    sinks:
+      - Markup(user_html
+      - mark_safe(user_html
+      - jinja2.Markup(html
+    suggestion: "Use bleach.clean() with an allowlist of safe tags before rendering"
+
+  - id: registry/xml/html/beautifulsoup-user
+    title: "HTML parsing with BeautifulSoup may execute scripts"
+    cwe: CWE-79
+    severity: medium
+    pattern_type: taint_sink
+    sinks:
+      - BeautifulSoup(user_
+      - BeautifulSoup(request.
+    suggestion: "Set parser to 'html.parser'; do not re-render BeautifulSoup output without sanitization"
+
+  - id: registry/xml/html/lxml-html-clean
+    title: "lxml.html.clean.Cleaner without script removal"
+    cwe: CWE-79
+    severity: high
+    pattern_type: taint_sink
+    sinks:
+      - Cleaner(safe_attrs_only=False
+      - lxml.html.clean.Cleaner(
+    suggestion: "Use Cleaner(scripts=True, javascript=True, safe_attrs_only=True)"
+
+  - id: registry/xml/dtd/enabled
+    title: "DTD processing enabled on XML parser"
+    cwe: CWE-611
+    severity: critical
+    pattern_type: regex
+    regex: "resolve_entities\\s*=\\s*True|load_dtd\\s*=\\s*True"
+    suggestion: "Disable DTD: XMLParser(load_dtd=False, resolve_entities=False, no_network=True)"
+
+  - id: registry/xml/xpath/elementpath-user
+    title: "XPath injection via ElementPath.findall with user data"
+    cwe: CWE-643
+    severity: high
+    pattern_type: taint_sink
+    sinks:
+      - .findall(f"
+      - .findall(user_
+      - .findall(request.
+    suggestion: "Use .findall('./tag') with a static tag; never concatenate user input"
+
+  - id: registry/xml/xinclude/enabled
+    title: "XInclude processing enabled (potential SSRF/file read)"
+    cwe: CWE-918
+    severity: high
+    pattern_type: taint_sink
+    sinks:
+      - .xinclude()
+      - root.xinclude()
+      - tree.xinclude()
+    suggestion: "Disable XInclude processing for user-supplied XML documents"
+
+  - id: registry/xml/pickling/marshal-user
+    title: "Code Injection via marshal.loads with user data"
+    cwe: CWE-502
+    severity: critical
+    pattern_type: taint_sink
+    sinks:
+      - marshal.loads(user_
+      - marshal.loads(request.
+    suggestion: "Never deserialize marshal data from untrusted sources"
+
+  - id: registry/xml/html/html-parser-user
+    title: "XSS via HTMLParser feed with user HTML"
+    cwe: CWE-79
+    severity: high
+    pattern_type: taint_sink
+    sinks:
+      - parser.feed(user_
+      - html.parser.HTMLParser().feed(request.
+    suggestion: "Use bleach.clean() or a strict HTML sanitizer"

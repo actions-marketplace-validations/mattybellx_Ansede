@@ -1,0 +1,117 @@
+language: javascript
+framework: mongoose_js
+version: "1.0"
+description: "Mongoose ODM (MongoDB/Node.js) security rules"
+rules:
+  - id: registry/mongoose/injection/find-user-filter
+    title: "NoSQL Injection via Model.find() with user filter"
+    cwe: CWE-943
+    severity: critical
+    pattern_type: taint_sink
+    sinks:
+      - Model.find(req.body
+      - User.find(req.query
+      - Model.find(req.params
+    suggestion: "Sanitize query filter; use express-mongo-sanitize to strip $ operators"
+
+  - id: registry/mongoose/injection/where-js
+    title: "JavaScript Injection via $where operator"
+    cwe: CWE-943
+    severity: critical
+    pattern_type: taint_sink
+    sinks:
+      - .find({ $where:
+      - .where({ $where:
+    suggestion: "Never use $where with user data; use standard query operators"
+
+  - id: registry/mongoose/injection/regex-user
+    title: "ReDoS via $regex with user-controlled pattern"
+    cwe: CWE-400
+    severity: high
+    pattern_type: taint_sink
+    sinks:
+      - { $regex: req.query.
+      - { $regex: req.body.
+    suggestion: "Escape regex patterns or use exact match instead of $regex"
+
+  - id: registry/mongoose/injection/populate-user-path
+    title: "Unrestricted populate path from user input"
+    cwe: CWE-200
+    severity: high
+    pattern_type: taint_sink
+    sinks:
+      - .populate(req.query.
+      - .populate(req.body.populate
+    suggestion: "Only populate predefined, trusted paths; never populate user-controlled fields"
+
+  - id: registry/mongoose/prototype/lean-chain
+    title: "Prototype chain pollution via .lean() result spread"
+    cwe: CWE-1321
+    severity: medium
+    pattern_type: taint_sink
+    sinks:
+      - Object.assign(target, doc.lean
+      - { ...await Model.lean(
+    suggestion: "Remove __proto__ and constructor keys from lean() results before spreading"
+
+  - id: registry/mongoose/auth/no-auth-middleware
+    title: "Mongoose query executed without authentication middleware"
+    cwe: CWE-306
+    severity: high
+    pattern_type: regex
+    regex: "router\\.(?:get|post|put|delete)\\(['\"][^'\"]+['\"],\\s*async"
+    suggestion: "Add authentication middleware before route handlers"
+
+  - id: registry/mongoose/credentials/hardcoded-uri
+    title: "MongoDB URI with hardcoded credentials"
+    cwe: CWE-798
+    severity: critical
+    pattern_type: regex
+    regex: "mongoose\\.connect\\(['\"]mongodb(?:\\+srv)?://[^:]+:[^@]+@"
+    suggestion: "Load MongoDB URI from environment variables"
+
+  - id: registry/mongoose/injection/update-user-body
+    title: "Mass Assignment via Model.updateOne with req.body"
+    cwe: CWE-915
+    severity: high
+    pattern_type: taint_sink
+    sinks:
+      - Model.updateOne(filter, req.body
+      - User.findByIdAndUpdate(id, req.body
+    suggestion: "Pick only allowed update fields; never pass req.body directly to update operators"
+
+  - id: registry/mongoose/idor/findbyid-no-scope
+    title: "IDOR via Model.findById without authorization"
+    cwe: CWE-639
+    severity: high
+    pattern_type: taint_sink
+    sinks:
+      - Model.findById(req.params.id
+      - User.findById(req.params.
+    suggestion: "Verify ownership: add { userId: req.user.id } to the query"
+
+  - id: registry/mongoose/dos/find-no-limit
+    title: "Unbounded Mongoose find without limit"
+    cwe: CWE-400
+    severity: medium
+    pattern_type: regex
+    regex: "\\.find\\([^)]*\\)\\.exec(?!.*limit)"
+    suggestion: "Add .limit(100) to Mongoose find queries"
+
+  - id: registry/mongoose/injection/aggregate-user
+    title: "NoSQL Injection via Mongoose aggregate() with user pipeline"
+    cwe: CWE-943
+    severity: high
+    pattern_type: taint_sink
+    sinks:
+      - Model.aggregate(req.body
+      - Model.aggregate([req.body.
+    suggestion: "Build aggregation pipelines with validated, typed values only"
+
+  - id: registry/mongoose/injection/schema-strict-false
+    title: "Mongoose schema with strict: false allows arbitrary fields"
+    cwe: CWE-915
+    severity: medium
+    pattern_type: regex
+    regex: "new Schema\\([^)]*,\\s*\\{[^}]*strict\\s*:\\s*false"
+    suggestion: "Use strict: true (default) to prevent unexpected field injection"

@@ -11,6 +11,7 @@ from ansede_static.js_engine.constants import (
     callee_matches,
 )
 from ansede_static.js_engine.project import (
+    _trace_helper_return_expression,
     build_js_project_index,
     propagate_helper_return_traces,
     request_object_trace,
@@ -18,10 +19,35 @@ from ansede_static.js_engine.project import (
     summarize_js_function,
 )
 from ansede_static.js_engine.structure import collect_calls
-from ansede_static.js_engine.taint import append_trace, extract_taint_traces, first_referenced_taint_name, trace_for_expr, trace_has_sanitizer
+from ansede_static.js_engine.taint import append_trace, extract_taint_traces, merge_traces, trace_for_expr, trace_has_sanitizer
 
 
 _DEFAULT_IFDS_CALL_STRING_K = GlobalGraph.DEFAULT_CALL_STRING_K
+
+
+def _trace_sink_argument(
+    argument: str,
+    taint_traces: dict[str, tuple[TraceFrame, ...]],
+    *,
+    line: int,
+    filename: str,
+    project,
+    global_graph: object | None,
+) -> tuple[TraceFrame, ...]:
+    trace = trace_for_expr(argument, taint_traces, line=line)
+    if not trace:
+        trace = request_object_trace(argument, line=line)
+    helper_trace: tuple[TraceFrame, ...] = ()
+    if project and filename:
+        helper_trace = _trace_helper_return_expression(
+            project,
+            filename,
+            argument,
+            taint_traces,
+            line=line,
+            global_graph=global_graph,
+        )
+    return merge_traces(trace, helper_trace)
 
 
 
@@ -60,27 +86,38 @@ def _check_taint_path_traversal(
     code: str,
     taint_traces: dict[str, tuple[TraceFrame, ...]],
     *,
+    filename: str,
+    project,
+    global_graph: object | None,
     agent: str,
     analysis_kind: str,
 ) -> list[Finding]:
-    if not taint_traces:
+    if not taint_traces and not (project and filename):
         return []
-    var_pattern = "|".join(re.escape(name) for name in taint_traces)
-    pattern = re.compile(rf'(?:fs\.|path\.resolve|path\.join)\w*\s*\([^)]*(?:{var_pattern})', re.IGNORECASE)
     findings: list[Finding] = []
-    for lineno, line in enumerate(code.splitlines(), 1):
-        if COMMENT_LINE_RE.match(line.strip()):
+    for call in collect_calls(code):
+        if not callee_matches(call.callee, PATH_CALLEE_PARTS):
             continue
-        if not pattern.search(line):
+        trace: tuple[TraceFrame, ...] = ()
+        for argument in call.arguments:
+            trace = _trace_sink_argument(
+                argument,
+                taint_traces,
+                line=call.line,
+                filename=filename,
+                project=project,
+                global_graph=global_graph,
+            )
+            if trace:
+                break
+        if not trace:
             continue
-        var_name = first_referenced_taint_name(line, taint_traces)
-        trace = taint_traces.get(var_name or "", ())
         if trace_has_sanitizer(trace, "path"):
             continue
-        trace = append_trace(trace, "sink", "sink `fs/path operation`", line=lineno)
+        trace = append_trace(trace, "sink", "sink `fs/path operation`", line=call.line)
         findings.append(_make_taint_call_finding(
-            lineno,
-            line,
+            call.line,
+            call.raw,
             "JS-038",
             "CWE-22",
             "CWE-22: Path traversal via tainted variable",
@@ -99,28 +136,37 @@ def _check_taint_redirect(
     code: str,
     taint_traces: dict[str, tuple[TraceFrame, ...]],
     *,
+    filename: str,
+    project,
+    global_graph: object | None,
     agent: str,
     analysis_kind: str,
 ) -> list[Finding]:
-    if not taint_traces:
+    if not taint_traces and not (project and filename):
         return []
-    var_pattern = "|".join(re.escape(name) for name in taint_traces)
-    pattern = re.compile(rf'(?:res|reply)\.redirect\s*\([^)]*(?:{var_pattern})', re.IGNORECASE)
     findings: list[Finding] = []
-    for lineno, line in enumerate(code.splitlines(), 1):
-        if COMMENT_LINE_RE.match(line.strip()):
+    for call in collect_calls(code):
+        if call.callee not in {"res.redirect", "reply.redirect"}:
             continue
-        if not pattern.search(line):
+        if not call.arguments:
             continue
-        var_name = first_referenced_taint_name(line, taint_traces)
-        trace = taint_traces.get(var_name or "", ())
+        trace = _trace_sink_argument(
+            call.arguments[0],
+            taint_traces,
+            line=call.line,
+            filename=filename,
+            project=project,
+            global_graph=global_graph,
+        )
+        if not trace:
+            continue
         if trace_has_sanitizer(trace, "redirect"):
             continue
-        sink_label = "sink `reply.redirect()`" if "reply.redirect" in line else "sink `res.redirect()`"
-        trace = append_trace(trace, "sink", sink_label, line=lineno)
+        sink_label = "sink `reply.redirect()`" if call.callee == "reply.redirect" else "sink `res.redirect()`"
+        trace = append_trace(trace, "sink", sink_label, line=call.line)
         findings.append(_make_taint_call_finding(
-            lineno,
-            line,
+            call.line,
+            call.raw,
             "JS-039",
             "CWE-601",
             "CWE-601: Open redirect via tainted variable",
@@ -139,30 +185,36 @@ def _check_taint_ssrf(
     code: str,
     taint_traces: dict[str, tuple[TraceFrame, ...]],
     *,
+    filename: str,
+    project,
+    global_graph: object | None,
     agent: str,
     analysis_kind: str,
 ) -> list[Finding]:
-    if not taint_traces:
+    if not taint_traces and not (project and filename):
         return []
-    var_pattern = "|".join(re.escape(name) for name in taint_traces)
-    pattern = re.compile(
-        rf'(?:fetch|axios\.(?:get|post|put|delete|request)|request|got(?:\.(?:get|post|stream))?|needle(?:\.(?:get|post|put|delete|request))?|superagent(?:\.(?:get|post))?|http\.get|https\.get)\s*\([^)]*(?:{var_pattern})',
-        re.IGNORECASE,
-    )
     findings: list[Finding] = []
-    for lineno, line in enumerate(code.splitlines(), 1):
-        if COMMENT_LINE_RE.match(line.strip()):
+    for call in collect_calls(code):
+        if not callee_matches(call.callee, SSRF_CALLEES):
             continue
-        if not pattern.search(line):
+        if not call.arguments:
             continue
-        var_name = first_referenced_taint_name(line, taint_traces)
-        trace = taint_traces.get(var_name or "", ())
+        trace = _trace_sink_argument(
+            call.arguments[0],
+            taint_traces,
+            line=call.line,
+            filename=filename,
+            project=project,
+            global_graph=global_graph,
+        )
+        if not trace:
+            continue
         if trace_has_sanitizer(trace, "ssrf"):
             continue
-        trace = append_trace(trace, "sink", "sink `HTTP client call`", line=lineno)
+        trace = append_trace(trace, "sink", "sink `HTTP client call`", line=call.line)
         findings.append(_make_taint_call_finding(
-            lineno,
-            line,
+            call.line,
+            call.raw,
             "JS-040",
             "CWE-918",
             "CWE-918: SSRF via tainted variable",
@@ -320,6 +372,63 @@ def _helper_taint_findings(
     return findings
 
 
+def _check_timer_indirection_redirect(
+    code: str,
+    taint_traces: dict[str, tuple[TraceFrame, ...]],
+    *,
+    agent: str,
+    analysis_kind: str,
+) -> list[Finding]:
+    """Detect tainted redirects nested inside timer callbacks like setTimeout(() => res.redirect(next))."""
+    if not taint_traces:
+        return []
+    findings: list[Finding] = []
+    lines = code.splitlines()
+    timer_re = re.compile(r'\b(?:setTimeout|setInterval)\s*\(', re.IGNORECASE)
+    for lineno, line in enumerate(lines, 1):
+        if COMMENT_LINE_RE.match(line.strip()) or not timer_re.search(line):
+            continue
+        window_parts = [line]
+        balance = line.count("(") - line.count(")")
+        next_idx = lineno
+        while balance > 0 and next_idx < len(lines):
+            next_idx += 1
+            window_parts.append(lines[next_idx - 1])
+            balance += lines[next_idx - 1].count("(") - lines[next_idx - 1].count(")")
+            if len(window_parts) >= 12:
+                break
+        window = "\n".join(window_parts)
+        if "redirect" not in window:
+            continue
+        matched_var = None
+        matched_trace: tuple[TraceFrame, ...] = ()
+        for name, trace in taint_traces.items():
+            if re.search(rf'\b(?:res|reply)\.redirect\s*\([^\n)]*\b{re.escape(name)}\b', window):
+                matched_var = name
+                matched_trace = trace
+                break
+        if not matched_var:
+            continue
+        if trace_has_sanitizer(matched_trace, "redirect"):
+            continue
+        trace = append_trace(matched_trace, "helper", "through timer callback", line=lineno)
+        trace = append_trace(trace, "sink", "sink `res.redirect()`", line=lineno)
+        findings.append(_make_taint_call_finding(
+            lineno,
+            window_parts[0],
+            "JS-039",
+            "CWE-601",
+            "CWE-601: Open redirect via timer-indirected tainted variable",
+            "Timer callback at L{line} forwards user-controlled input into redirect logic: `{snippet}`. Indirection through setTimeout/setInterval still reaches a redirect sink.",
+            "Validate redirect targets before scheduling the callback, or close over only a validated relative path.",
+            Severity.HIGH,
+            agent=agent,
+            analysis_kind=analysis_kind,
+            trace=trace,
+        ))
+    return findings
+
+
 
 def run_taint_flow_checks(
     code: str,
@@ -345,8 +454,20 @@ def run_taint_flow_checks(
         _check_taint_path_traversal,
         _check_taint_redirect,
         _check_taint_ssrf,
+        _check_timer_indirection_redirect,
     ):
-        findings.extend(checker(code, taint_traces, agent=agent, analysis_kind=analysis_kind))
+        if checker is _check_timer_indirection_redirect:
+            findings.extend(checker(code, taint_traces, agent=agent, analysis_kind=analysis_kind))
+            continue
+        findings.extend(checker(
+            code,
+            taint_traces,
+            filename=filename,
+            project=active_project,
+            global_graph=global_graph,
+            agent=agent,
+            analysis_kind=analysis_kind,
+        ))
     findings.extend(
         _helper_taint_findings(
             code,
