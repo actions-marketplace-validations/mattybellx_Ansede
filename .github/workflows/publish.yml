@@ -1,15 +1,18 @@
 name: Publish to PyPI
 
-# Fires automatically when a GitHub Release is published.
-# Only triggers on release events — does NOT run on push.
+# Fires automatically when a version tag is pushed.
+# This keeps publishing aligned with the tag-driven Release workflow,
+# including releases created by GitHub Actions itself.
 #
 # Supports:
 #   1) Trusted Publishing (recommended, no long-lived token)
 #   2) API token fallback via PYPI_API_TOKEN secret
 
 on:
-  release:
-    types: [published]
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
 
 permissions:
   contents: read

@@ -3,6 +3,12 @@
 All notable changes to ansede-static are documented here.
 Format follows [Keep a Changelog](https://keepachangelog.com/).
 
+## [2.1.2] — 2026-05-11
+
+### Fixed — PyPI release triggering
+- **Tag-driven PyPI publish workflow** — switched `.github/workflows/publish.yml` to trigger on pushed `v*` tags so package publication runs for automated releases created by the repository's tag-based Release workflow.
+- **Trusted Publishing kept enabled** — the workflow continues to request `id-token: write`, allowing `pypa/gh-action-pypi-publish@release/v1` to exchange GitHub's OIDC token with PyPI securely.
+
 ## [2.1.1] — 2026-05-11
 
 ### Fixed — Release automation hotfix
