@@ -41,3 +41,13 @@ vscode-extension/*.vsix
 # OS
 .DS_Store
 Thumbs.db
+
+# IDE-specific tool config
+.continue/
+
+# Benchmark corpus (nested git repos - use manually or as submodules)
+benchmarks/online_random_samples/
+
+# Benchmark run outputs and state
+tmp/
+benchmarks/random_real_benchmark_progress.json
