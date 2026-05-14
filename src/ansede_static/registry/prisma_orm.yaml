@@ -89,3 +89,23 @@ rules:
     pattern_type: regex
     regex: "prisma\\.\\w+\\.findMany\\((?!.*take)"
     suggestion: "Always set take: for pagination: prisma.model.findMany({ take: 100 })"
+
+  - id: registry/prisma/second-order/queryrawunsafe-stored
+    title: "Second-Order SQL Injection via prisma.$queryRawUnsafe() with stored string"
+    cwe: CWE-89
+    severity: critical
+    pattern_type: taint_sink
+    sinks:
+      - prisma.$queryRawUnsafe(stored
+      - prisma.$queryRawUnsafe(sql_
+      - prisma.$executeRawUnsafe(stored
+    suggestion: "Use prisma.$queryRaw with Prisma.sql template literals for parameterized queries even with stored data"
+
+  - id: registry/prisma/second-order/executerawunsafe-stored
+    title: "Second-Order SQL Injection via prisma.$executeRawUnsafe() with stored SQL"
+    cwe: CWE-89
+    severity: critical
+    pattern_type: taint_sink
+    sinks:
+      - prisma.$executeRawUnsafe(
+    suggestion: "Replace $executeRawUnsafe with $executeRaw using Prisma.sql`` tagged template literals"

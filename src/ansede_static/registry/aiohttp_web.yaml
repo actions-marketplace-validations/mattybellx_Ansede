@@ -177,3 +177,127 @@ rules:
     pattern_type: regex
     regex: "web\\.run_app\\(.*debug\\s*=\\s*True|app\\.run\\(.*debug\\s*=\\s*True"
     suggestion: "Set debug=False in production"
+
+  - id: registry/aiohttp/ssrf/client-request-user-url
+    title: "SSRF via aiohttp ClientSession.request with user URL"
+    cwe: CWE-918
+    severity: high
+    pattern_type: taint_sink
+    sinks:
+      - await session.request('GET', request.
+      - await session.request("GET", request.
+      - session.request('GET', user_
+    suggestion: "Validate outbound URLs with strict allowlists and block private/internal IP ranges"
+
+  - id: registry/aiohttp/redirect/httpseeother-user
+    title: "Open Redirect via HTTPSeeOther with user-controlled location"
+    cwe: CWE-601
+    severity: high
+    pattern_type: taint_sink
+    sinks:
+      - raise web.HTTPSeeOther(location=request.
+      - raise web.HTTPSeeOther(request.
+    suggestion: "Allow only relative internal paths or validated trusted domains"
+
+  - id: registry/aiohttp/header/set-cookie-user
+    title: "Header injection via set_cookie with user-controlled value"
+    cwe: CWE-113
+    severity: high
+    pattern_type: taint_sink
+    sinks:
+      - response.set_cookie('session', request.
+      - response.set_cookie("session", request.
+      - response.set_cookie('token', user_
+    suggestion: "Normalize and reject CR/LF in cookie values before setting headers"
+
+  - id: registry/aiohttp/session/cookie-httponly-false
+    title: "Session cookie missing HttpOnly protection"
+    cwe: CWE-1004
+    severity: high
+    pattern_type: regex
+    regex: "set_cookie\\(.*httponly\\s*=\\s*False"
+    suggestion: "Set httponly=True for all session and auth cookies"
+
+  - id: registry/aiohttp/template/jinja2-template-user
+    title: "SSTI via jinja2.Template with user-controlled template source"
+    cwe: CWE-94
+    severity: critical
+    pattern_type: taint_sink
+    sinks:
+      - jinja2.Template(request.
+      - Template(request.
+      - jinja2.Environment().from_string(request.
+    suggestion: "Do not compile templates from user input; render only trusted template files"
+
+  - id: registry/aiohttp/websocket/send-user-html
+    title: "Potential XSS via WebSocket send_str of user-controlled content"
+    cwe: CWE-79
+    severity: high
+    pattern_type: taint_sink
+    sinks:
+      - await ws.send_str(request.
+      - ws.send_str(user_
+    suggestion: "HTML-encode untrusted data before sending to browser-rendered websocket clients"
+
+  - id: registry/aiohttp/deserialization/yaml-load-request
+    title: "Unsafe YAML deserialization from aiohttp request body"
+    cwe: CWE-502
+    severity: critical
+    pattern_type: taint_sink
+    sinks:
+      - yaml.load(await request.text(
+      - yaml.load(await request.read(
+    suggestion: "Use yaml.safe_load and validate the schema of parsed input"
+
+  - id: registry/aiohttp/ssrf/client-post-user-url
+    title: "SSRF via aiohttp ClientSession.post with user-controlled URL"
+    cwe: CWE-918
+    severity: high
+    pattern_type: taint_sink
+    sinks:
+      - await session.post(request.
+      - await session.post(user_
+      - session.post(url=request.
+    suggestion: "Validate outbound target URLs against allowlists and block internal address ranges"
+
+  - id: registry/aiohttp/redirect/httptemporaryredirect-user
+    title: "Open Redirect via HTTPTemporaryRedirect with user-controlled location"
+    cwe: CWE-601
+    severity: high
+    pattern_type: taint_sink
+    sinks:
+      - raise web.HTTPTemporaryRedirect(location=request.
+      - raise web.HTTPTemporaryRedirect(request.
+    suggestion: "Only redirect to validated internal paths or trusted domains"
+
+  - id: registry/aiohttp/header/content-disposition-user
+    title: "Header injection via user-controlled Content-Disposition"
+    cwe: CWE-113
+    severity: high
+    pattern_type: taint_sink
+    sinks:
+      - response.headers['Content-Disposition'] = request.
+      - response.headers["Content-Disposition"] = request.
+      - response.headers['Content-Disposition'] = user_
+    suggestion: "Strip CR/LF from filename/header values and use a safe filename policy"
+
+  - id: registry/aiohttp/deserialization/orjson-loads-request
+    title: "Unsafe deserialization via orjson.loads on untrusted request body"
+    cwe: CWE-502
+    severity: high
+    pattern_type: taint_sink
+    sinks:
+      - orjson.loads(await request.read(
+      - orjson.loads(await request.text(
+    suggestion: "Apply strict schema validation and size limits before deserializing untrusted payloads"
+
+  - id: registry/aiohttp/path/open-user-path
+    title: "Path Traversal via open() with aiohttp request-controlled path"
+    cwe: CWE-22
+    severity: high
+    pattern_type: taint_sink
+    sinks:
+      - open(request.query.get(
+      - open(request.match_info.get(
+      - open(user_
+    suggestion: "Resolve and validate requested file paths against a fixed safe directory"

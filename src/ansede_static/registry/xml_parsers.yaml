@@ -182,3 +182,36 @@ rules:
       - parser.feed(user_
       - html.parser.HTMLParser().feed(request.
     suggestion: "Use bleach.clean() or a strict HTML sanitizer"
+
+  - id: registry/xml/xxe/xmltodict-user
+    title: "XXE via xmltodict.parse() with user-controlled XML"
+    cwe: CWE-611
+    severity: critical
+    pattern_type: taint_sink
+    sinks:
+      - xmltodict.parse(user_
+      - xmltodict.parse(request.
+      - xmltodict.parse(data
+    suggestion: "Parse through defusedxml first: xmltodict.parse(defusedxml.ElementTree.tostring(defusedxml.ElementTree.fromstring(data)))"
+
+  - id: registry/xml/xxe/lxml-objectify-user
+    title: "XXE via lxml.objectify.fromstring() with user XML"
+    cwe: CWE-611
+    severity: critical
+    pattern_type: taint_sink
+    sinks:
+      - objectify.fromstring(user_
+      - lxml.objectify.fromstring(user_
+      - objectify.fromstring(request.
+    suggestion: "Use lxml.etree.XMLParser(resolve_entities=False) before objectify parsing"
+
+  - id: registry/xml/xxe/pulldom-user
+    title: "XXE via xml.dom.pulldom with user-controlled XML"
+    cwe: CWE-611
+    severity: critical
+    pattern_type: taint_sink
+    sinks:
+      - pulldom.parseString(user_
+      - pulldom.parseString(request.
+      - pulldom.parse(user_
+    suggestion: "Use defusedxml.pulldom instead of the stdlib pulldom"

@@ -1,0 +1,266 @@
+language: javascript
+framework: pug_js
+version: "1.0"
+description: "Pug template security rules for Node/Express apps"
+rules:
+  - id: registry/express/pug/compile-user-template
+    title: "SSTI via pug.compile() with user-controlled template string"
+    cwe: CWE-94
+    severity: critical
+    pattern_type: taint_sink
+    sinks:
+      - pug.compile(req.
+      - pug.compile(body.
+      - pug.compile(template
+    suggestion: "Keep Pug templates static; never compile user-controlled template strings."
+
+  - id: registry/express/pug/render-user-template
+    title: "SSTI via pug.render() with user-controlled template string"
+    cwe: CWE-94
+    severity: critical
+    pattern_type: taint_sink
+    sinks:
+      - pug.render(req.
+      - pug.render(body.
+      - pug.render(template
+    suggestion: "Render only static Pug templates from trusted files, not request data."
+
+  - id: registry/express/pug/compilefile-user-path
+    title: "SSTI via pug.compileFile() with user-controlled template path"
+    cwe: CWE-94
+    severity: high
+    pattern_type: taint_sink
+    sinks:
+      - pug.compileFile(req.
+      - pug.compileFile(body.
+      - pug.compileFile(template
+      - pug.compileFile(viewPath
+      - compileFile(viewPath
+    suggestion: "Never let user input select the Pug file path; use fixed template paths."
+
+  - id: registry/express/pug/compileclient-user-template
+    title: "SSTI via pug.compileClient() with user-controlled template string"
+    cwe: CWE-94
+    severity: critical
+    pattern_type: taint_sink
+    sinks:
+      - pug.compileClient(req.
+      - pug.compileClient(body.
+      - pug.compileClient(template
+    suggestion: "Never compile client-side Pug templates from user-controlled strings; use static trusted templates only."
+
+  - id: registry/express/pug/renderfile-user-path
+    title: "Path Traversal via pug.renderFile() with user-controlled file path"
+    cwe: CWE-22
+    severity: critical
+    pattern_type: taint_sink
+    sinks:
+      - pug.renderFile(req.
+      - pug.renderFile(body.
+      - pug.renderFile(templatePath
+    suggestion: "Keep Pug template file paths static; never accept paths from user input. Validate against a fixed templates directory."
+
+  - id: registry/express/pug/render-concat-template
+    title: "SSTI via string concatenation into pug.render() template"
+    cwe: CWE-94
+    severity: critical
+    pattern_type: taint_sink
+    sinks:
+      - "pug.render('include ' + req."
+      - pug.render(header + req.
+    suggestion: "Never concatenate user data into Pug template strings; use static includes with pre-approved variables only."
+
+  - id: registry/express/pug/dangerous-locals
+    title: "XSS via Pug unescaped-html locals with user-controlled value"
+    cwe: CWE-79
+    severity: high
+    pattern_type: taint_sink
+    sinks:
+      - "locals: { html: req."
+      - "locals: { content: req."
+      - "!{locals.html"
+    suggestion: "Use Pug escaped interpolation (#{var}) instead of unescaped (!{var}); sanitize HTML with DOMPurify before passing to locals."
+
+  - id: registry/express/pug/compilefileclient-user-path
+    title: "SSTI/Path traversal risk via pug.compileFileClient() with user path"
+    cwe: CWE-94
+    severity: critical
+    pattern_type: taint_sink
+    sinks:
+      - pug.compileFileClient(req.
+      - pug.compileFileClient(body.
+      - pug.compileFileClient(templatePath
+    suggestion: "Do not compile client templates from user-supplied file paths"
+
+  - id: registry/express/pug/renderfile-basedir-user
+    title: "Path Traversal via pug.renderFile() basedir option from user input"
+    cwe: CWE-22
+    severity: high
+    pattern_type: taint_sink
+    sinks:
+      - "basedir: req."
+      - "basedir: user_"
+    suggestion: "Set basedir to a fixed internal templates directory; never from request values"
+
+  - id: registry/express/pug/include-user-interpolation
+    title: "SSTI via include path interpolation in user-controlled Pug template"
+    cwe: CWE-94
+    severity: critical
+    pattern_type: taint_sink
+    sinks:
+      - "pug.render('include ' + req."
+      - "pug.render(`include ${req."
+    suggestion: "Avoid include directives built from user data; use fixed includes only"
+
+  - id: registry/express/pug/locals-unescaped-body
+    title: "XSS via unescaped locals passed directly from request body"
+    cwe: CWE-79
+    severity: high
+    pattern_type: taint_sink
+    sinks:
+      - "locals: req.body"
+      - "res.render('view', req.body"
+    suggestion: "Whitelist and escape locals before passing to templates"
+
+  - id: registry/express/pug/renderfile-filename-user
+    title: "Template path manipulation via filename option from user input"
+    cwe: CWE-22
+    severity: high
+    pattern_type: taint_sink
+    sinks:
+      - "filename: req."
+      - "filename: templatePath"
+    suggestion: "Never set Pug filename from user input; keep template resolution static"
+
+  - id: registry/express/pug/renderfile-cache-user
+    title: "Pug renderFile cache behavior controlled by request data"
+    cwe: CWE-693
+    severity: medium
+    pattern_type: regex
+    regex: "pug\\.renderFile\\([^\\n]*cache:\\s*req\\."
+    suggestion: "Keep template cache configuration static in server code"
+
+  - id: registry/express/pug/compile-compiledebug-user
+    title: "Pug compileDebug option controlled by user input"
+    cwe: CWE-209
+    severity: medium
+    pattern_type: regex
+    regex: "pug\\.compile\\([^\\n]*compileDebug:\\s*req\\."
+    suggestion: "Disable compileDebug in production and do not let clients influence debug flags"
+
+  - id: registry/express/pug/render-pretty-user
+    title: "Pug pretty output option controlled by user input"
+    cwe: CWE-20
+    severity: low
+    pattern_type: regex
+    regex: "pug\\.render\\([^\\n]*pretty:\\s*req\\."
+    suggestion: "Keep rendering options server-controlled and independent of request data"
+
+  - id: registry/express/pug/res-render-user-view
+    title: "Potential template path traversal via res.render(req.*)"
+    cwe: CWE-22
+    severity: high
+    pattern_type: taint_sink
+    sinks:
+      - res.render(req.
+      - res.render(request.
+    suggestion: "Render only known template names from an allowlist"
+
+  - id: registry/express/pug/renderfile-basedir-path-join-user
+    title: "Pug basedir built from user-influenced path.join"
+    cwe: CWE-22
+    severity: high
+    pattern_type: regex
+    regex: "basedir:\\s*path\\.join\\([^\\n]*req\\."
+    suggestion: "Avoid combining user input into basedir; enforce fixed trusted template roots"
+
+  - id: registry/express/pug/extends-user-path
+    title: "SSTI via Pug extends directive path from user input"
+    cwe: CWE-94
+    severity: critical
+    pattern_type: taint_sink
+    sinks:
+      - "pug.render('extends ' + req."
+      - "pug.render(`extends ${req."
+      - pug.render(extendsTemplate
+    suggestion: "Never allow user input to control which parent template is extended"
+
+  - id: registry/express/pug/render-json-user-locals
+    title: "XSS via JSON object locals passed unsanitized to Pug render"
+    cwe: CWE-79
+    severity: high
+    pattern_type: taint_sink
+    sinks:
+      - pug.render(template, req.body
+      - pug.render(template, req.query
+      - pug.renderFile(viewPath, req.body
+    suggestion: "Whitelist and escape all keys and values before passing request objects as Pug locals"
+
+  - id: registry/express/pug/compile-globals-user
+    title: "Pug globals option controlled by user input"
+    cwe: CWE-94
+    severity: high
+    pattern_type: regex
+    regex: "pug\\.compile\\([^\\n]*globals:\\s*req\\."
+    suggestion: "Keep the Pug globals list static and server-controlled"
+
+  - id: registry/express/pug/res-render-layout-user
+    title: "Layout path traversal via res.render layout option from user input"
+    cwe: CWE-22
+    severity: high
+    pattern_type: regex
+    regex: "res\\.render\\([^\\n]*layout:\\s*req\\."
+    suggestion: "Use a fixed layout file; never select layout paths from request parameters"
+
+  - id: registry/express/pug/render-selfclosing-user
+    title: "Pug selfClosingTags option controlled by user input"
+    cwe: CWE-20
+    severity: low
+    pattern_type: regex
+    regex: "pug\\.render\\([^\\n]*selfClosingTags:\\s*req\\."
+    suggestion: "Keep selfClosingTags option static and server-controlled"
+
+  - id: registry/express/pug/res-locals-user-all
+    title: "All res.locals set directly from request body"
+    cwe: CWE-79
+    severity: high
+    pattern_type: taint_sink
+    sinks:
+      - res.locals = req.body
+      - res.locals = req.query
+      - Object.assign(res.locals, req.body
+    suggestion: "Explicitly set only trusted, sanitized properties on res.locals; never spread the whole request body"
+
+  - id: registry/express/pug/renderfile-options-user
+    title: "pug.renderFile() called with full options object from user input"
+    cwe: CWE-94
+    severity: high
+    pattern_type: taint_sink
+    sinks:
+      - pug.renderFile(viewPath, req.body)
+      - pug.renderFile(viewPath, req.query)
+    suggestion: "Whitelist specific options keys; never pass the full request body/query as Pug render options"
+
+  - id: registry/express/pug/compile-plugins-user
+    title: "Pug plugins array controlled by user input"
+    cwe: CWE-94
+    severity: high
+    pattern_type: regex
+    regex: "pug\\.compile\\([^\\n]*plugins:\\s*req\\."
+    suggestion: "Only use statically loaded, trusted Pug plugin modules; never source plugin lists from request data"
+
+  - id: registry/express/pug/render-doctype-user
+    title: "Pug doctype option controlled by user input"
+    cwe: CWE-20
+    severity: low
+    pattern_type: regex
+    regex: "pug\\.render\\([^\\n]*doctype:\\s*req\\."
+    suggestion: "Fix the doctype to a known-safe value; ignore any client-provided doctype preference"
+
+  - id: registry/express/pug/compile-inlinerunstime-user
+    title: "Pug inlineRuntimeFunctions option controlled by user input"
+    cwe: CWE-94
+    severity: medium
+    pattern_type: regex
+    regex: "pug\\.compile\\([^\\n]*inlineRuntimeFunctions:\\s*req\\."
+    suggestion: "Keep Pug runtime function inlining static; do not expose compiler flags to request parameters"

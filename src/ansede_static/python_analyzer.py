@@ -4487,6 +4487,7 @@ def _rule_22(ctx: _Ctx) -> list[Finding]:
     for fname, fnode in func_defs.items():
         tainted_vars: set[str] = set()
         validated_vars: set[str] = set()
+        canonical_redirect_vars: set[str] = set()
         for arg in fnode.args.args:
             if arg.arg in ("request", "req", "event", "body", "payload", "data"):
                 tainted_vars.add(arg.arg)
@@ -4501,6 +4502,9 @@ def _rule_22(ctx: _Ctx) -> list[Finding]:
                             tainted_vars.add(t.id)
                         elif isinstance(node.value, ast.Call):
                             cn = _get_call_name(node.value)
+                            if cn and "get_absolute_url" in cn:
+                                canonical_redirect_vars.add(t.id)
+                                continue
                             if cn and any(sf in cn for sf in _safe_redirect_fns):
                                 validated_vars.add(t.id)
 
@@ -4521,14 +4525,21 @@ def _rule_22(ctx: _Ctx) -> list[Finding]:
             var_name = "url"
             if isinstance(url_arg, ast.Name):
                 var_name = url_arg.id
+                if url_arg.id in canonical_redirect_vars:
+                    continue
                 is_tainted = url_arg.id in tainted_vars and url_arg.id not in validated_vars
             elif isinstance(url_arg, ast.Call):
                 cn = _get_call_name(url_arg)
+                if cn and "get_absolute_url" in cn:
+                    continue
                 if cn and any(sf in cn for sf in _safe_redirect_fns):
                     continue  # redirect(url_for(...)) is safe
                 is_tainted = _is_tainted_expr(url_arg, {v: None for v in tainted_vars})
                 var_name = "expression"
             elif isinstance(url_arg, (ast.JoinedStr, ast.BinOp)):
+                expr = ast.unparse(url_arg) if hasattr(ast, "unparse") else ""
+                if "get_absolute_url" in expr or ("object_domain" in expr and "absurl" in expr):
+                    continue
                 is_tainted = _is_tainted_expr(url_arg, {v: None for v in tainted_vars})
                 var_name = "interpolated URL"
             elif isinstance(url_arg, ast.Subscript):

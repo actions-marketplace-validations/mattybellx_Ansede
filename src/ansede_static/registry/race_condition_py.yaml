@@ -1,0 +1,125 @@
+language: python
+framework: race_condition_py
+version: "1.0"
+description: "TOCTOU and race condition patterns for Python (CWE-362, CWE-377)"
+rules:
+  - id: registry/python/toctou/exists-then-open
+    title: "TOCTOU — os.path.exists() check before open()"
+    cwe: CWE-362
+    severity: high
+    pattern_type: taint_sink
+    sinks:
+      - "os.path.exists("
+    suggestion: "Use try/except FileNotFoundError around open(); avoid separate exist checks that can race"
+
+  - id: registry/python/toctou/access-then-open
+    title: "TOCTOU — os.access() check before open()"
+    cwe: CWE-362
+    severity: high
+    pattern_type: taint_sink
+    sinks:
+      - "os.access("
+    suggestion: "os.access() is inherently racy; open the file directly and handle PermissionError"
+
+  - id: registry/python/toctou/tempfile-mktemp
+    title: "Insecure temporary file creation via mktemp()"
+    cwe: CWE-377
+    severity: high
+    pattern_type: taint_sink
+    sinks:
+      - "tempfile.mktemp("
+    suggestion: "Use tempfile.NamedTemporaryFile() or tempfile.mkstemp() which create and open atomically"
+
+  - id: registry/python/toctou/rename-race
+    title: "TOCTOU — file existence check before os.rename()"
+    cwe: CWE-362
+    severity: medium
+    pattern_type: taint_sink
+    sinks:
+      - "os.rename(src,"
+      - "shutil.move(src,"
+    suggestion: "Use os.replace() for atomic rename; wrap in try/except instead of pre-checking existence"
+
+  - id: registry/python/toctou/chmod-race
+    title: "TOCTOU — os.chmod() after path check allows symlink attack"
+    cwe: CWE-362
+    severity: high
+    pattern_type: taint_sink
+    sinks:
+      - "os.chmod(path,"
+      - "os.chown(path,"
+    suggestion: "Use os.fchmod(fd, mode) on an already-open file descriptor to avoid symlink races"
+
+  - id: registry/python/toctou/makedirs-race
+    title: "TOCTOU — directory existence check before os.makedirs()"
+    cwe: CWE-362
+    severity: medium
+    pattern_type: taint_sink
+    sinks:
+      - "os.mkdir("
+      - "os.makedirs("
+    suggestion: "Use os.makedirs(path, exist_ok=True) to create atomically without pre-checks"
+
+  - id: registry/python/toctou/unlink-race
+    title: "TOCTOU — os.path.exists check before os.unlink()"
+    cwe: CWE-362
+    severity: medium
+    pattern_type: taint_sink
+    sinks:
+      - "os.unlink(path"
+      - "os.remove(path"
+    suggestion: "Use try/except FileNotFoundError around os.unlink(); avoid separate existence checks"
+
+  - id: registry/python/toctou/open-shared-file
+    title: "Race condition — shared temp file opened without exclusive lock"
+    cwe: CWE-362
+    severity: high
+    pattern_type: taint_sink
+    sinks:
+      - "open('/tmp/"
+      - "open(\"/tmp/"
+      - "open(tempfile.gettempdir()"
+    suggestion: "Use tempfile.NamedTemporaryFile(delete=False) with proper permissions; never hard-code /tmp paths"
+
+  - id: registry/python/toctou/stat-race
+    title: "TOCTOU — os.stat() check before file operation allows race"
+    cwe: CWE-362
+    severity: high
+    pattern_type: taint_sink
+    sinks:
+      - os.stat(user_
+      - os.stat(request.
+      - os.stat(path)
+    suggestion: "Prefer atomic operations (O_CREAT|O_EXCL) or open-then-stat via file descriptor to avoid TOCTOU"
+
+  - id: registry/python/toctou/isfile-isdir-race
+    title: "TOCTOU — os.path.isfile/isdir check before open allows symlink race"
+    cwe: CWE-362
+    severity: high
+    pattern_type: taint_sink
+    sinks:
+      - os.path.isfile(user_
+      - os.path.isdir(user_
+      - os.path.isfile(request.
+    suggestion: "Open the file directly and handle exceptions; existence/type checks before open are inherently racy"
+
+  - id: registry/python/toctou/os-open-user-path
+    title: "TOCTOU — os.open() with user-controlled path"
+    cwe: CWE-362
+    severity: high
+    pattern_type: taint_sink
+    sinks:
+      - os.open(user_
+      - os.open(request.
+    suggestion: "Resolve path with os.path.realpath() before calling os.open(); use O_NOFOLLOW to prevent symlink attacks"
+
+  - id: registry/python/toctou/lstat-symlink-race
+    title: "TOCTOU — os.lstat() before path operation allows symlink substitution attack"
+    cwe: CWE-362
+    severity: high
+    pattern_type: taint_sink
+    sinks:
+      - os.lstat(user_
+      - os.lstat(request.
+      - os.lstat(path)
+    suggestion: "Use os.open() with O_NOFOLLOW instead of lstat+open sequences; treat lstat results as advisory only"

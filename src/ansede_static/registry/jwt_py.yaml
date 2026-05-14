@@ -1,0 +1,221 @@
+language: python
+framework: jwt_py
+version: "1.0"
+description: "JWT security rules for PyJWT and python-jose libraries (CWE-327, CWE-347, CWE-798)"
+rules:
+  - id: registry/python/jwt/algorithm-none
+    title: "JWT None Algorithm Attack — accepts unsigned tokens"
+    cwe: CWE-347
+    severity: critical
+    pattern_type: taint_sink
+    sinks:
+      - "algorithms=[\"none\"]"
+      - "algorithms=['none']"
+      - "algorithm=\"none\""
+      - "algorithm='none'"
+      - "algorithms=[\"None\"]"
+      - "algorithms=['None']"
+    suggestion: "Reject the 'none' algorithm; always specify a strong algorithm list like ['RS256'] or ['HS256']"
+
+  - id: registry/python/jwt/decode-no-verify
+    title: "JWT decode with signature verification disabled"
+    cwe: CWE-347
+    severity: critical
+    pattern_type: taint_sink
+    sinks:
+      - "options={\"verify_signature\": False}"
+      - "options={'verify_signature': False}"
+      - "options={\"verify_exp\": False}"
+      - "options={'verify_exp': False}"
+      - "verify=False"
+    suggestion: "Never set verify_signature=False; always verify JWT signatures in production"
+
+  - id: registry/python/jwt/weak-secret
+    title: "JWT signed with hardcoded or weak secret key"
+    cwe: CWE-798
+    severity: critical
+    pattern_type: taint_sink
+    sinks:
+      - "jwt.encode(payload, \"secret\""
+      - "jwt.encode(payload, 'secret'"
+      - "jwt.encode(payload, \"password\""
+      - "jwt.encode(payload, ''"
+      - "jwt.encode(payload, \"test\""
+      - "jwt.encode(payload, 'test'"
+      - "SECRET_KEY = \"secret\""
+      - "SECRET_KEY = 'secret'"
+    suggestion: "Use a cryptographically random secret of ≥256 bits; load from environment variable, never hardcode"
+
+  - id: registry/python/jwt/algorithm-confusion
+    title: "JWT Algorithm Confusion — RS256 key used with HS256"
+    cwe: CWE-347
+    severity: critical
+    pattern_type: taint_sink
+    sinks:
+      - "jwt.decode(token, public_key, algorithms=[\"HS256\"])"
+      - "jwt.decode(token, public_key, algorithms=['HS256'])"
+      - "jwt.encode(payload, public_key, algorithm=\"HS256\")"
+      - "jwt.encode(payload, public_key, algorithm='HS256')"
+    suggestion: "Never use a public key as an HMAC secret; use RS256/ES256 with separate private/public keys"
+
+  - id: registry/python/jwt/decode-without-algorithms
+    title: "JWT decode without explicit algorithms list"
+    cwe: CWE-327
+    severity: high
+    pattern_type: taint_sink
+    sinks:
+      - "jwt.decode(token, key)"
+      - "jwt.decode(request."
+    suggestion: "Always pass an explicit algorithms list: jwt.decode(token, key, algorithms=['RS256'])"
+
+  - id: registry/python/jwt/header-alg-user
+    title: "JWT algorithm taken from user-supplied header"
+    cwe: CWE-347
+    severity: critical
+    pattern_type: taint_sink
+    sinks:
+      - "get_unverified_header(token)[\"alg\"]"
+      - "get_unverified_header(token)['alg']"
+      - "decode_complete(token"
+    suggestion: "Never trust the algorithm from the token header; always specify the algorithm explicitly"
+
+  - id: registry/python/jwt/long-expiry
+    title: "JWT issued with excessively long expiration"
+    cwe: CWE-613
+    severity: medium
+    pattern_type: taint_sink
+    sinks:
+      - "timedelta(days=365"
+      - "timedelta(days=730"
+      - "timedelta(days=3650"
+      - "exp\": datetime.utcnow() + timedelta(years="
+    suggestion: "Access tokens should expire in minutes to hours; use refresh tokens for long sessions"
+
+  - id: registry/python/jwt/missing-expiry
+    title: "JWT encoded without expiration claim"
+    cwe: CWE-613
+    severity: medium
+    pattern_type: taint_sink
+    sinks:
+      - "jwt.encode({\"sub\":"
+      - "jwt.encode({'sub':"
+      - "jwt.encode({\"user\":"
+      - "jwt.encode({'user':"
+    suggestion: "Always include an 'exp' claim in JWT payloads"
+
+  - id: registry/python/jwt/jose-none-alg
+    title: "python-jose JWT with none algorithm"
+    cwe: CWE-347
+    severity: critical
+    pattern_type: taint_sink
+    sinks:
+      - "jose.jwt.decode(token"
+      - "from jose import jwt"
+    suggestion: "Always specify algorithm in jose.jwt.decode(); never allow none or unknown algorithms"
+
+  - id: registry/python/jwt/cookie-no-httponly
+    title: "JWT stored in cookie without HttpOnly flag"
+    cwe: CWE-614
+    severity: high
+    pattern_type: taint_sink
+    sinks:
+      - "set_cookie(\"token\","
+      - "set_cookie('token',"
+      - "set_cookie(\"jwt\","
+      - "set_cookie('jwt',"
+    suggestion: "Set HttpOnly=True, Secure=True, and SameSite=Strict on JWT cookies"
+
+  - id: registry/python/jwt/rsa-private-key-hardcoded
+    title: "RSA private key hardcoded in source code"
+    cwe: CWE-321
+    severity: critical
+    pattern_type: regex
+    regex: '-----BEGIN (?:RSA )?PRIVATE KEY-----'
+    suggestion: "Never hardcode private keys; load from secure key stores or environment variables"
+
+  - id: registry/python/jwt/kid-sql-injection
+    title: "JWT kid header used in SQL query — SQL injection via JWT claim"
+    cwe: CWE-89
+    severity: critical
+    pattern_type: taint_sink
+    sinks:
+      - 'cursor.execute(f"SELECT * FROM keys WHERE id = {header'
+      - "cursor.execute(f'SELECT * FROM keys WHERE id = {header"
+      - 'cursor.execute("SELECT * FROM keys WHERE id = " + header["kid"]'
+      - "cursor.execute('SELECT * FROM keys WHERE id = ' + header['kid']"
+    suggestion: "Use parameterized queries; validate the kid header against an allowlist"
+
+  - id: registry/python/jwt/debug-log-payload
+    title: "JWT decoded payload logged in plaintext"
+    cwe: CWE-532
+    severity: high
+    pattern_type: taint_sink
+    sinks:
+      - logger.debug(jwt.decode(
+      - logger.info(jwt.decode(
+      - print(jwt.decode(
+      - logging.debug(payload
+    suggestion: "Never log decoded JWT payloads; they may contain sensitive user claims"
+
+  - id: registry/python/jwt/token-in-query-param
+    title: "JWT passed as URL query parameter"
+    cwe: CWE-598
+    severity: high
+    pattern_type: regex
+    regex: "request\\.args\\.get\\([\"'](token|jwt|access_token)[\"']\\)"
+    suggestion: "Pass JWTs in Authorization headers, not URL parameters"
+
+  - id: registry/python/jwt/token-in-session-insecure
+    title: "JWT stored in server-side session without expiry policy"
+    cwe: CWE-613
+    severity: medium
+    pattern_type: taint_sink
+    sinks:
+      - "session['token'] = jwt.encode("
+      - 'session["token"] = jwt.encode('
+      - "session['jwt'] = "
+      - 'session["jwt"] = '
+    suggestion: "Use short-lived tokens; avoid storing JWTs in sessions without rotation policy"
+
+  - id: registry/python/jwt/pyjwkclient-user-url
+    title: "JWT JWK fetch from user-controlled URL (SSRF risk)"
+    cwe: CWE-918
+    severity: high
+    pattern_type: taint_sink
+    sinks:
+      - PyJWKClient(request.
+      - PyJWKClient(user_
+      - PyJWKClient(kwargs.get(
+    suggestion: "Use a fixed trusted JWKS URL; never accept user-supplied keyset URLs"
+
+  - id: registry/python/jwt/verify-issuer-disabled
+    title: "JWT issuer verification disabled"
+    cwe: CWE-347
+    severity: high
+    pattern_type: regex
+    regex: "\"verify_iss\"\\s*:\\s*False|'verify_iss'\\s*:\\s*False"
+    suggestion: "Keep verify_iss enabled and validate issuer against trusted value(s)"
+
+  - id: registry/python/jwt/verify-nbf-disabled
+    title: "JWT not-before (nbf) verification disabled"
+    cwe: CWE-347
+    severity: medium
+    pattern_type: regex
+    regex: "\"verify_nbf\"\\s*:\\s*False|'verify_nbf'\\s*:\\s*False"
+    suggestion: "Keep verify_nbf enabled to enforce token activation windows"
+
+  - id: registry/python/jwt/decode-complete-no-verify
+    title: "jwt.decode_complete used with verification disabled"
+    cwe: CWE-347
+    severity: critical
+    pattern_type: regex
+    regex: "decode_complete\\(token\\s*,\\s*options\\s*=\\s*\\{['\"]verify_signature['\"]\\s*:\\s*False\\}"
+    suggestion: "Do not decode complete JWTs without signature verification"
+
+  - id: registry/python/jwt/short-secret-key
+    title: "JWT secret key appears too short"
+    cwe: CWE-326
+    severity: high
+    pattern_type: regex
+    regex: "SECRET_KEY\\s*=\\s*'[^']{1,15}'"
+    suggestion: "Use a high-entropy secret key of at least 32 bytes"

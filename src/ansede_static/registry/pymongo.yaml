@@ -178,3 +178,55 @@ rules:
     pattern_type: regex
     regex: "\\$where.*function\\s*\\("
     suggestion: "Avoid $where entirely; use aggregation expressions instead"
+
+  - id: registry/pymongo/nosqli/find-one-and-update-user
+    title: "NoSQL Injection via find_one_and_update with user filter/update"
+    cwe: CWE-943
+    severity: critical
+    pattern_type: taint_sink
+    sinks:
+      - collection.find_one_and_update(request.
+      - collection.find_one_and_update(user_
+      - db.users.find_one_and_update(request.
+    suggestion: "Validate both filter and update documents before calling find_one_and_update"
+
+  - id: registry/pymongo/deserialization/bson-decode-user
+    title: "Unsafe BSON decode from user-controlled payload"
+    cwe: CWE-502
+    severity: high
+    pattern_type: taint_sink
+    sinks:
+      - bson.BSON(request.
+      - bson.BSON(user_
+      - BSON(request.
+    suggestion: "Validate and constrain BSON structures from untrusted sources"
+
+  - id: registry/pymongo/auth/tls-insecure-options
+    title: "MongoDB TLS configured with insecure certificate validation"
+    cwe: CWE-295
+    severity: high
+    pattern_type: regex
+    regex: "tlsAllowInvalidCertificates\\s*=\\s*True|tlsInsecure\\s*=\\s*True"
+    suggestion: "Require certificate validation in TLS connections"
+
+  - id: registry/pymongo/exposure/find-one-user-return
+    title: "User-influenced find_one result returned directly"
+    cwe: CWE-200
+    severity: medium
+    pattern_type: taint_sink
+    sinks:
+      - return collection.find_one(request.
+      - return db.users.find_one(request.
+      - return user_collection.find_one(request.
+    suggestion: "Project only safe fields and avoid direct document passthrough"
+
+  - id: registry/pymongo/nosqli/sort-user-field
+    title: "User-controlled MongoDB sort field"
+    cwe: CWE-20
+    severity: medium
+    pattern_type: taint_sink
+    sinks:
+      - .sort(request.
+      - .sort([(request.
+      - .sort([(user_
+    suggestion: "Allowlist sortable fields and fixed sort directions"

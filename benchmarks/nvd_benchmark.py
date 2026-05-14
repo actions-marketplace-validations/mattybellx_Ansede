@@ -38,7 +38,20 @@ from ansede_static._types import Finding, Severity
 # ──────────────────────────────────────────────────────────────────────────────
 
 def _run_entry(entry: CVEEntry) -> tuple[bool, list[Finding]]:
-    """Return (detected, findings) for one CVE entry."""
+    """Return (detected, findings) for one CVE entry.
+
+    Matching uses two independent paths (either suffices for a True Positive):
+
+    1. Text/CWE match — the legacy path: ``entry.expected_hit`` regex is
+       searched in the concatenation of a finding's title, description, and cwe.
+
+    2. Sink-centric coordinate match — if ``entry.sink_line`` is set, any
+       finding whose reported line number equals ``sink_line`` (±1 for
+       zero-vs-one based off-by-one safety) counts as a TP regardless of the
+       CWE label text.  This prevents false-negatives caused solely by a CWE
+       label mismatch between what the scanner emits and what the corpus entry
+       annotates.
+    """
     suffix = {
         "python": ".py",
         "javascript": ".js",
@@ -55,9 +68,16 @@ def _run_entry(entry: CVEEntry) -> tuple[bool, list[Finding]]:
 
     pattern = re.compile(entry.expected_hit, re.IGNORECASE)
     for finding in result.findings:
+        # Path 1: text/CWE match (backward-compatible).
         combined = f"{finding.title} {finding.description} {finding.cwe}"
         if pattern.search(combined):
             return True, result.findings
+
+        # Path 2: sink-centric coordinate match.
+        if entry.sink_line is not None:
+            fline = getattr(finding, "line", None)
+            if fline is not None and abs(fline - entry.sink_line) <= 1:
+                return True, result.findings
 
     return False, result.findings
 

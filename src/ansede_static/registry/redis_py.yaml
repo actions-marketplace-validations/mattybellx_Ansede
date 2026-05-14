@@ -159,3 +159,56 @@ rules:
       - r.scan(match=request.
       - r.hscan(match=user_
     suggestion: "Restrict match patterns; never use user data directly as SCAN match"
+
+  - id: registry/redis/deserialization/yaml-unsafe-get
+    title: "Unsafe YAML deserialization of Redis-stored value"
+    cwe: CWE-502
+    severity: critical
+    pattern_type: taint_sink
+    sinks:
+      - yaml.load(r.get(
+      - yaml.load(redis.get(
+      - yaml.unsafe_load(r.get(
+    suggestion: "Use yaml.safe_load() for untrusted data; avoid storing serialized YAML in Redis"
+
+  - id: registry/redis/injection/zadd-user-score
+    title: "Redis ZADD injection via user-controlled member or score"
+    cwe: CWE-20
+    severity: medium
+    pattern_type: taint_sink
+    sinks:
+      - r.zadd(request.
+      - r.zadd(user_
+      - r.zincrby(user_
+    suggestion: "Validate and sanitize member names and scores before ZADD operations"
+
+  - id: registry/redis/auth/cluster-no-ssl
+    title: "RedisCluster connection without SSL/TLS"
+    cwe: CWE-319
+    severity: high
+    pattern_type: regex
+    regex: 'RedisCluster\(host='
+    suggestion: "Enable SSL: RedisCluster(host=host, ssl=True) to encrypt cluster traffic"
+
+  - id: registry/redis/injection/pipeline-user-cmd
+    title: "Redis pipeline with user-controlled command"
+    cwe: CWE-78
+    severity: high
+    pattern_type: taint_sink
+    sinks:
+      - pipe.execute_command(user_
+      - pipe.execute_command(request.
+      - p.execute_command(user_
+    suggestion: "Use structured Redis client methods; never pipe user-controlled commands"
+
+  - id: registry/redis/storage/unencrypted-pii-hset
+    title: "PII stored unencrypted in Redis hash via HSET"
+    cwe: CWE-312
+    severity: high
+    pattern_type: taint_sink
+    sinks:
+      - 'r.hset("user", "password", password'
+      - "r.hset('user', 'email', email"
+      - "r.hmset('profile', {'ssn':"
+      - 'r.hmset("profile", {"ssn":'
+    suggestion: "Encrypt or tokenize PII before storing in Redis hashes"

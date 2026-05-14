@@ -1,0 +1,130 @@
+language: python
+framework: supply_chain
+version: "1.0"
+description: "Supply chain and dependency security rules (CWE-1357, CWE-829, CWE-494)"
+rules:
+  - id: registry/python/supply-chain/requirements-no-hash
+    title: "requirements.txt dependency without hash pinning"
+    cwe: CWE-829
+    severity: medium
+    pattern_type: regex
+    regex: "^[A-Za-z][A-Za-z0-9_\\-]+[>=<]=?[0-9]"
+    suggestion: "Use pip-compile with --generate-hashes to pin dependency hashes against supply-chain attacks"
+
+  - id: registry/python/supply-chain/setup-py-shell-command
+    title: "setup.py executing shell commands during installation"
+    cwe: CWE-494
+    severity: critical
+    pattern_type: taint_sink
+    sinks:
+      - "os.system("
+      - "subprocess.call("
+      - "subprocess.run("
+    suggestion: "setup.py should not execute shell commands; use entry_points and package_data instead"
+
+  - id: registry/python/supply-chain/unpinned-git-dependency
+    title: "Git dependency without commit-hash pinning"
+    cwe: CWE-829
+    severity: medium
+    pattern_type: regex
+    regex: "git\\+https?://.*@(master|main|develop|HEAD)"
+    suggestion: "Pin git dependencies to a specific commit SHA: git+https://github.com/org/pkg@SHA#egg=pkg"
+
+  - id: registry/python/supply-chain/install-from-url
+    title: "Package installed directly from user-supplied URL"
+    cwe: CWE-829
+    severity: high
+    pattern_type: taint_sink
+    sinks:
+      - "pip.main(['install', url"
+      - "subprocess.run(['pip', 'install', url"
+      - "os.system(f'pip install {url"
+    suggestion: "Never install packages from user-supplied URLs; use a vetted private registry"
+
+  - id: registry/python/supply-chain/pickle-load-network
+    title: "Deserialization of data received from network without integrity check"
+    cwe: CWE-502
+    severity: critical
+    pattern_type: taint_sink
+    sinks:
+      - "pickle.loads(response."
+      - "pickle.loads(data)"
+      - "pickle.load(socket."
+    suggestion: "Never deserialize pickle data from untrusted sources; use JSON with schema validation"
+
+  - id: registry/python/supply-chain/code-exec-import
+    title: "Dynamic __import__ or importlib.import_module with user input"
+    cwe: CWE-829
+    severity: critical
+    pattern_type: taint_sink
+    sinks:
+      - "__import__(request."
+      - "importlib.import_module(request."
+      - "importlib.import_module(user_"
+      - "__import__(user_"
+    suggestion: "Never dynamically import modules from user-supplied names; use a static registry of safe modules"
+
+  - id: registry/python/supply-chain/exec-compiled-code
+    title: "exec() or eval() of compiled code from untrusted source"
+    cwe: CWE-494
+    severity: critical
+    pattern_type: taint_sink
+    sinks:
+      - "exec(compile(request."
+      - "exec(compile(download."
+      - "exec(requests.get("
+    suggestion: "Never exec() downloaded or user-supplied code; validate and sign packages cryptographically"
+
+  - id: registry/python/supply-chain/unsafe-yaml-load-config
+    title: "yaml.load() on externally sourced configuration file"
+    cwe: CWE-1357
+    severity: high
+    pattern_type: taint_sink
+    sinks:
+      - "yaml.load(config_file"
+      - "yaml.load(remote_config"
+      - "yaml.load(downloaded_"
+    suggestion: "Always use yaml.safe_load() for external config; yaml.load() with arbitrary Loader can execute Python code"
+  - id: registry/python/supply-chain/sys-path-injection
+    title: "Python sys.path injection via user-controlled directory"
+    cwe: CWE-829
+    severity: critical
+    pattern_type: taint_sink
+    sinks:
+      - sys.path.insert(0, user_
+      - sys.path.append(user_
+      - sys.path.insert(0, request.
+    suggestion: "Never modify sys.path with user-supplied directories; use a virtual environment with locked dependencies"
+
+  - id: registry/python/supply-chain/pkg-resources-require-user
+    title: "User-controlled package requirement via pkg_resources.require()"
+    cwe: CWE-829
+    severity: high
+    pattern_type: taint_sink
+    sinks:
+      - pkg_resources.require(request.
+      - pkg_resources.require(user_
+      - pkg_resources.WorkingSet().require(user_
+    suggestion: "Never pass user-supplied package names to require(); maintain a fixed dependency manifest"
+
+  - id: registry/python/supply-chain/pip-install-user-package
+    title: "pip install with user-controlled package name or index URL"
+    cwe: CWE-829
+    severity: critical
+    pattern_type: taint_sink
+    sinks:
+      - subprocess.run(['pip', 'install', user_
+      - subprocess.run(["pip", "install", user_
+      - subprocess.call(['pip', 'install', request.
+    suggestion: "Never install packages whose names or sources come from user input; use a locked private registry"
+
+  - id: registry/python/supply-chain/importlib-user-module
+    title: "Dynamic module import via importlib with user-controlled name"
+    cwe: CWE-829
+    severity: critical
+    pattern_type: taint_sink
+    sinks:
+      - importlib.import_module(request.
+      - importlib.import_module(user_
+      - importlib.resources.files(user_
+    suggestion: "Never import modules whose names come from user input; use a static allowlist of safe module names"

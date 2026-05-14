@@ -151,3 +151,36 @@ rules:
       - logging.config.dictConfig(request.
       - logging.config.fileConfig(user_
     suggestion: "Only load logging configuration from trusted files or hardcoded dicts"
+
+  - id: registry/yaml/deserialization/json-loads-body
+    title: "JSON deserialization from body/payload variable without schema validation"
+    cwe: CWE-20
+    severity: medium
+    pattern_type: taint_sink
+    sinks:
+      - json.loads(body
+      - json.loads(payload
+      - json.loads(raw_data
+    suggestion: "Validate JSON with jsonschema.validate() or a Pydantic model after deserializing"
+
+  - id: registry/yaml/config/configparser-read-string-body
+    title: "ConfigParser loading user-controlled body or payload content"
+    cwe: CWE-20
+    severity: medium
+    pattern_type: taint_sink
+    sinks:
+      - config.read_string(body
+      - config.read_string(payload
+      - parser.read_string(body
+    suggestion: "Validate INI structure and restrict allowed sections and keys"
+
+  - id: registry/yaml/config/configparser-read-user-file
+    title: "ConfigParser reading user-controlled file path"
+    cwe: CWE-22
+    severity: high
+    pattern_type: taint_sink
+    sinks:
+      - config.read(user_
+      - config.read(request.
+      - parser.read(user_
+    suggestion: "Restrict config file paths to a trusted directory; validate with realpath() before reading"

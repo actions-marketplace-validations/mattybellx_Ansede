@@ -1,0 +1,115 @@
+language: javascript
+framework: jwt_js
+version: "1.0"
+description: "JWT security rules for Node.js jsonwebtoken / jose / express-jwt (CWE-347, CWE-327, CWE-798)"
+rules:
+  - id: registry/js/jwt/algorithm-none
+    title: "JWT None Algorithm Attack — accepts unsigned tokens"
+    cwe: CWE-347
+    severity: critical
+    pattern_type: taint_sink
+    sinks:
+      - "algorithms: ['none']"
+      - "algorithms: [\"none\"]"
+      - "algorithm: 'none'"
+      - "algorithm: \"none\""
+    suggestion: "Always specify a strong algorithm list; reject 'none' algorithm in all environments"
+
+  - id: registry/js/jwt/verify-no-algorithms
+    title: "JWT verification without explicit algorithm list — algorithm confusion risk"
+    cwe: CWE-347
+    severity: critical
+    pattern_type: taint_sink
+    sinks:
+      - "jwt.verify(token, secret)"
+      - "jwt.verify(token, key)"
+      - "jwt.verify(req."
+    suggestion: "Always pass { algorithms: ['RS256'] } or your chosen algorithm to jwt.verify()"
+
+  - id: registry/js/jwt/weak-secret
+    title: "JWT signed with hardcoded or weak secret"
+    cwe: CWE-798
+    severity: critical
+    pattern_type: taint_sink
+    sinks:
+      - "jwt.sign(payload, 'secret'"
+      - "jwt.sign(payload, \"secret\""
+      - "jwt.sign(payload, 'password'"
+      - "jwt.sign(payload, ''"
+      - "jwt.sign(payload, \"test\""
+    suggestion: "Use a cryptographically random secret of ≥256 bits from an environment variable"
+
+  - id: registry/js/jwt/ignore-expiry
+    title: "JWT verification with expiration validation disabled"
+    cwe: CWE-613
+    severity: high
+    pattern_type: taint_sink
+    sinks:
+      - "ignoreExpiration: true"
+      - "ignoreExpiration:true"
+    suggestion: "Never ignore JWT expiration; short-lived tokens are a critical security control"
+
+  - id: registry/js/jwt/algorithm-confusion
+    title: "JWT Algorithm Confusion — RS/EC public key used with HS algorithm"
+    cwe: CWE-347
+    severity: critical
+    pattern_type: taint_sink
+    sinks:
+      - "jwt.verify(token, publicKey, { algorithm: 'HS256' }"
+      - "jwt.verify(token, publicKey, { algorithms: ['HS256'] }"
+    suggestion: "RS/EC keys must not be used as HMAC secrets; separate signing/verification key material by algorithm"
+
+  - id: registry/js/jwt/header-alg-trust
+    title: "JWT algorithm taken from decoded header — algorithm switching attack"
+    cwe: CWE-347
+    severity: critical
+    pattern_type: taint_sink
+    sinks:
+      - "decoded.header.alg"
+      - "jwt.decode(token).header"
+    suggestion: "Never trust the algorithm from the JWT header; always specify algorithms in jwt.verify() options"
+
+  - id: registry/js/jwt/long-expiry
+    title: "JWT issued with excessively long expiration"
+    cwe: CWE-613
+    severity: medium
+    pattern_type: taint_sink
+    sinks:
+      - "expiresIn: '365d'"
+      - "expiresIn: '1y'"
+      - "expiresIn: '2y'"
+      - "expiresIn: 31536000"
+    suggestion: "Access tokens should expire in minutes to hours; use refresh token rotation for long sessions"
+
+  - id: registry/js/jwt/cookie-no-flags
+    title: "JWT stored in cookie without security flags"
+    cwe: CWE-614
+    severity: high
+    pattern_type: taint_sink
+    sinks:
+      - "res.cookie('token',"
+      - "res.cookie(\"token\","
+      - "res.cookie('jwt',"
+      - "res.cookie(\"jwt\","
+    suggestion: "Set { httpOnly: true, secure: true, sameSite: 'strict' } on JWT cookies"
+
+  - id: registry/js/jwt/jose-no-alg
+    title: "jose SignJWT without explicit algorithm"
+    cwe: CWE-327
+    severity: high
+    pattern_type: taint_sink
+    sinks:
+      - "new SignJWT("
+      - "jose.SignJWT("
+    suggestion: "Always call .setProtectedHeader({ alg: 'RS256' }) before signing with jose"
+
+  - id: registry/js/jwt/secret-from-user
+    title: "JWT secret or key material derived from user input"
+    cwe: CWE-321
+    severity: critical
+    pattern_type: taint_sink
+    sinks:
+      - "jwt.sign(payload, req."
+      - "jwt.sign(payload, body."
+      - "jwt.verify(token, req."
+    suggestion: "JWT secrets must come from server-side configuration, never from request data"

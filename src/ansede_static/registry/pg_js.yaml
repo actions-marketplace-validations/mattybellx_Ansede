@@ -80,3 +80,26 @@ rules:
       - `ORDER BY ${req.query.
       - `ORDER BY ${req.body.
     suggestion: "Validate sort column against an allowlist; never interpolate user data into ORDER BY"
+
+  - id: registry/pg/second-order/client-query-stored
+    title: "Second-Order SQL Injection via pg client.query() with stored SQL"
+    cwe: CWE-89
+    severity: critical
+    pattern_type: taint_sink
+    sinks:
+      - client.query(stored
+      - pool.query(stored
+      - client.query(sql_
+      - client.query(raw_
+    suggestion: "Parameterize stored values: client.query('SELECT * WHERE id = $1', [storedId])"
+
+  - id: registry/pg/second-order/order-by-stored
+    title: "Second-Order SQL Injection via stored column name in ORDER BY"
+    cwe: CWE-89
+    severity: high
+    pattern_type: taint_sink
+    sinks:
+      - "`ORDER BY ${stored"
+      - "`ORDER BY ${sort_"
+      - "`ORDER BY ${saved_"
+    suggestion: "Validate stored column names against a declared schema allowlist before injecting into ORDER BY"

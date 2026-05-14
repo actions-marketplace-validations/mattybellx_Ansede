@@ -190,6 +190,50 @@ rules:
       - subprocess.getoutput(
     suggestion: "Use subprocess.run with shell=False and a list of arguments"
 
+  - id: registry/subprocess/path/shutil-copy-user
+    title: "Path Traversal via shutil.copy() with user-controlled path"
+    cwe: CWE-22
+    severity: high
+    pattern_type: taint_sink
+    sinks:
+      - shutil.copy(user_
+      - shutil.copy(request.
+      - shutil.copy2(user_
+      - shutil.copy2(request.
+    suggestion: "Resolve and validate paths with os.path.realpath() before copying files"
+
+  - id: registry/subprocess/path/shutil-move-user
+    title: "Path Traversal via shutil.move() with user-controlled path"
+    cwe: CWE-22
+    severity: high
+    pattern_type: taint_sink
+    sinks:
+      - shutil.move(user_
+      - shutil.move(request.
+    suggestion: "Resolve and validate paths with os.path.realpath() before moving files"
+
+  - id: registry/subprocess/path/shutil-rmtree-user
+    title: "Arbitrary Directory Deletion via shutil.rmtree() with user-controlled path"
+    cwe: CWE-22
+    severity: critical
+    pattern_type: taint_sink
+    sinks:
+      - shutil.rmtree(user_
+      - shutil.rmtree(request.
+    suggestion: "Never delete directories based on user-supplied paths; resolve and validate with realpath()"
+
+  - id: registry/subprocess/path/os-remove-user
+    title: "Arbitrary File Deletion via os.remove/os.unlink with user-controlled path"
+    cwe: CWE-22
+    severity: critical
+    pattern_type: taint_sink
+    sinks:
+      - os.remove(user_
+      - os.remove(request.
+      - os.unlink(user_
+      - os.unlink(request.
+    suggestion: "Validate file paths with os.path.realpath() before deletion"
+
   - id: registry/subprocess/cmd/paramiko-exec
     title: "Command Injection via paramiko exec_command"
     cwe: CWE-78

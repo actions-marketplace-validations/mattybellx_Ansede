@@ -1,0 +1,309 @@
+language: javascript
+framework: ldap_js
+version: "1.0"
+description: "LDAP injection rules for Node.js ldapjs / ldapts / activedirectory libraries (CWE-90)"
+rules:
+  - id: registry/js/ldap/filter-user-input
+    title: "LDAP Injection via user-controlled search filter (ldapjs)"
+    cwe: CWE-90
+    severity: critical
+    pattern_type: taint_sink
+    sinks:
+      - client.search(
+      - ldap.search(
+      - ldapClient.search(
+    suggestion: "Escape all user input with ldapjs's ldap.escape() or the ldap-escape package before inserting into filters"
+
+  - id: registry/js/ldap/filter-template-literal
+    title: "LDAP Injection via template literal filter construction"
+    cwe: CWE-90
+    severity: critical
+    pattern_type: taint_sink
+    sinks:
+      - "filter: `"
+      - "filter: '(' +"
+      - "filter: \"(\" +"
+      - "searchFilter: `"
+      - "searchFilter: '(' +"
+    suggestion: "Use ldap.escape(value) and build filters as '(uid=' + ldap.escape(user) + ')'"
+
+  - id: registry/js/ldap/dn-template-literal
+    title: "LDAP Injection via template literal DN construction"
+    cwe: CWE-90
+    severity: critical
+    pattern_type: taint_sink
+    sinks:
+      - "bindDN: `"
+      - "bindDN: 'cn=' +"
+      - "bindDN: \"cn=\" +"
+      - "baseDN: `"
+      - "searchBase: `"
+    suggestion: "DN components must come from config, never from user-supplied data"
+
+  - id: registry/js/ldap/activedirectory-find
+    title: "LDAP Injection via ActiveDirectory find/query with user filter"
+    cwe: CWE-90
+    severity: critical
+    pattern_type: taint_sink
+    sinks:
+      - ad.find(
+      - ad.findUser(
+      - ad.findGroup(
+      - ad.authenticate(
+      - activeDirectory.find(
+    suggestion: "Sanitize user input with ldapEscape() before constructing ActiveDirectory query filters"
+
+  - id: registry/js/ldap/ldapts-search
+    title: "LDAP Injection via ldapts client.search with user-controlled filter"
+    cwe: CWE-90
+    severity: critical
+    pattern_type: taint_sink
+    sinks:
+      - client.search(req.
+      - ldapts.search(
+      - ldapClient.search(req.
+    suggestion: "Use ldapts escapeFilter() to sanitize all user-supplied filter fragments"
+
+  - id: registry/js/ldap/bind-user-controlled
+    title: "LDAP Injection via user-controlled bind DN or credentials"
+    cwe: CWE-90
+    severity: high
+    pattern_type: taint_sink
+    sinks:
+      - client.bind(req.
+      - ldapClient.bind(req.
+      - client.bind(`
+      - ldap.bind(`
+    suggestion: "Never use raw request data as the DN for LDAP bind; validate against trusted identity store"
+
+  - id: registry/js/ldap/modify-user
+    title: "LDAP Injection via modify/add with user-controlled attribute values"
+    cwe: CWE-90
+    severity: high
+    pattern_type: taint_sink
+    sinks:
+      - client.modify(req.
+      - client.add(req.
+      - ldap.modify(
+      - ldap.add(
+    suggestion: "Validate and escape all attribute values before passing to LDAP modify or add operations"
+
+  - id: registry/js/ldap/delete-user
+    title: "LDAP Object Deletion via user-controlled DN"
+    cwe: CWE-90
+    severity: critical
+    pattern_type: taint_sink
+    sinks:
+      - client.del(req.
+      - ldap.del(req.
+      - client.del(`
+      - ldap.del(`
+    suggestion: "Never use request data as the DN for LDAP delete; require explicit administrator confirmation"
+
+  - id: registry/js/ldap/compare-user
+    title: "LDAP Injection via compare operation with user-controlled attribute or value"
+    cwe: CWE-90
+    severity: high
+    pattern_type: taint_sink
+    sinks:
+      - client.compare(req.
+      - ldap.compare(req.
+      - client.compare(`
+    suggestion: "Escape attribute values with ldap.escape() before LDAP compare; restrict comparable attributes to a fixed allowlist"
+
+  - id: registry/js/ldap/exop-user
+    title: "LDAP Extended Operation with user-controlled OID or request value"
+    cwe: CWE-90
+    severity: high
+    pattern_type: taint_sink
+    sinks:
+      - client.exop(req.
+      - ldap.exop(req.
+    suggestion: "Allow only a fixed set of OIDs for extended LDAP operations; never accept OIDs from user input"
+
+  - id: registry/js/ldap/modifydn-user
+    title: "LDAP Injection via modifyDN with user-controlled DN"
+    cwe: CWE-90
+    severity: critical
+    pattern_type: taint_sink
+    sinks:
+      - client.modifyDN(req.
+      - ldap.modifyDN(req.
+    suggestion: "Never pass raw user DN values to modifyDN; resolve and validate against trusted directory entries"
+
+  - id: registry/js/ldap/create-client-user-url
+    title: "LDAP connection established to user-controlled server URL"
+    cwe: CWE-918
+    severity: high
+    pattern_type: regex
+    regex: "(ldap|ldapjs)\\.createClient\\(\\{\\s*url:\\s*req\\."
+    suggestion: "Use fixed LDAP endpoints from secure configuration, not request-controlled URLs"
+
+  - id: registry/js/ldap/search-options-user-size-limit
+    title: "LDAP search sizeLimit controlled by user input"
+    cwe: CWE-400
+    severity: medium
+    pattern_type: regex
+    regex: "sizeLimit:\\s*req\\.|paged:\\s*\\{\\s*pageSize:\\s*req\\."
+    suggestion: "Enforce fixed server-side limits for page size and search result size"
+
+  - id: registry/js/ldap/filter-presence-user
+    title: "LDAP wildcard/presence filter built from user input"
+    cwe: CWE-90
+    severity: high
+    pattern_type: taint_sink
+    sinks:
+      - "filter: '(uid=' + req."
+      - "filter: `(uid=${req."
+    suggestion: "Escape user input and disallow wildcard presence filters from request values"
+
+  - id: registry/js/ldap/referral-chasing-user
+    title: "LDAP referral chasing options influenced by user input"
+    cwe: CWE-20
+    severity: medium
+    pattern_type: regex
+    regex: "referrals:\\s*\\{\\s*enabled:\\s*req\\.|referral:\\s*req\\."
+    suggestion: "Configure referral policy statically; do not allow clients to control referral behavior"
+
+  - id: registry/js/ldap/starttls-user-options
+    title: "LDAP StartTLS options controlled by user input"
+    cwe: CWE-295
+    severity: high
+    pattern_type: regex
+    regex: "starttls\\([^\\n]*req\\.|startTLS\\([^\\n]*req\\."
+    suggestion: "Keep TLS options static and validated; never source certificate verification settings from requests"
+
+  - id: registry/js/ldap/search-scope-user
+    title: "LDAP search scope controlled by user input"
+    cwe: CWE-20
+    severity: medium
+    pattern_type: regex
+    regex: "scope:\\s*req\\.|scope:\\s*request\\."
+    suggestion: "Restrict search scope to a fixed safe value like 'sub' or 'one'"
+
+  - id: registry/js/ldap/search-timeout-user
+    title: "LDAP search timeout/timeLimit controlled by user input"
+    cwe: CWE-400
+    severity: medium
+    pattern_type: regex
+    regex: "(timeLimit|timeout):\\s*req\\."
+    suggestion: "Use server-side fixed timeout and time limits for all LDAP searches"
+
+  - id: registry/js/ldap/bind-password-from-query
+    title: "LDAP bind uses password directly from request parameters"
+    cwe: CWE-522
+    severity: high
+    pattern_type: taint_sink
+    sinks:
+      - client.bind(config.bindDN, req.query.
+      - client.bind(serviceDn, req.body.
+      - ldapClient.bind(bindDn, req.
+    suggestion: "Use secure credential storage and avoid binding with raw client-provided passwords"
+
+  - id: registry/js/ldap/url-template-literal-user
+    title: "LDAP URL template literal built from user input"
+    cwe: CWE-918
+    severity: high
+    pattern_type: taint_sink
+    sinks:
+      - "url: `ldap://${req."
+      - "url: `ldaps://${req."
+    suggestion: "Construct LDAP URLs from trusted configuration only"
+
+  - id: registry/js/ldap/search-attributes-user
+    title: "LDAP search attributes list controlled by user input"
+    cwe: CWE-20
+    severity: medium
+    pattern_type: regex
+    regex: "attributes:\\s*req\\.|attributes:\\s*user_"
+    suggestion: "Define a fixed allowlist of attributes to retrieve; never accept attribute names from request data"
+
+  - id: registry/js/ldap/abandon-user-msgid
+    title: "LDAP abandon operation with user-controlled message ID"
+    cwe: CWE-20
+    severity: medium
+    pattern_type: taint_sink
+    sinks:
+      - client.abandon(req.
+      - ldap.abandon(req.
+      - ldapClient.abandon(req.
+    suggestion: "Track message IDs server-side; do not let clients cancel arbitrary in-flight operations"
+
+  - id: registry/js/ldap/modify-change-user-op
+    title: "LDAP modify change-type or values controlled by user input"
+    cwe: CWE-90
+    severity: high
+    pattern_type: taint_sink
+    sinks:
+      - "modification: { type: req."
+      - "changes: [{ operation: req."
+      - "modification: { vals: req."
+    suggestion: "Restrict modification operations and attribute values to a validated allowlist"
+
+  - id: registry/js/ldap/reconnect-user-url
+    title: "LDAP client reconnect to user-controlled server URL"
+    cwe: CWE-918
+    severity: high
+    pattern_type: regex
+    regex: "reconnect:\\s*\\{[^}]*url:\\s*req\\."
+    suggestion: "Reconnect only to the same trusted LDAP endpoint; disallow URL overrides from client data"
+
+  - id: registry/js/ldap/change-password-user
+    title: "LDAP password modification using user-controlled new password without validation"
+    cwe: CWE-620
+    severity: high
+    pattern_type: taint_sink
+    sinks:
+      - "client.exop('1.3.6.1.4.1.4203.1.11.1', req."
+      - passwordModify(req.
+      - ldap.passwordModify(req.
+    suggestion: "Validate password policy server-side and require current-password confirmation before LDAP password modification"
+
+  - id: registry/js/ldap/search-base-user
+    title: "LDAP search base DN derived from user input"
+    cwe: CWE-90
+    severity: high
+    pattern_type: taint_sink
+    sinks:
+      - client.search(req.
+      - ldap.search(req.
+      - ldapClient.search(req.
+    suggestion: "Restrict search base to a fixed or config-driven DN; never derive from request parameters"
+
+  - id: registry/js/ldap/add-entry-user
+    title: "LDAP add operation with user-controlled entry attributes"
+    cwe: CWE-90
+    severity: high
+    pattern_type: taint_sink
+    sinks:
+      - client.add(baseDN, req.body
+      - ldap.add(dn, req.body
+      - ldapClient.add(dn, req.
+    suggestion: "Validate and allowlist all attribute names and values before performing LDAP add"
+
+  - id: registry/js/ldap/control-oid-user
+    title: "LDAP control OID or criticality controlled by user input"
+    cwe: CWE-20
+    severity: medium
+    pattern_type: regex
+    regex: "new\\s+ldap\\.Control\\([^\\n]*req\\.|LdapControl\\([^\\n]*req\\."
+    suggestion: "Use only fixed, pre-approved LDAP controls; never accept OIDs or criticality flags from clients"
+
+  - id: registry/js/ldap/client-options-timeout-user
+    title: "LDAP client connection timeout set from user input"
+    cwe: CWE-400
+    severity: medium
+    pattern_type: regex
+    regex: "ldap\\.createClient\\([^\\n]*connectTimeout:\\s*req\\."
+    suggestion: "Set LDAP connection timeout from server configuration; do not expose it to request data"
+
+  - id: registry/js/ldap/password-reset-target-user
+    title: "LDAP password reset targeting user-controlled DN"
+    cwe: CWE-639
+    severity: high
+    pattern_type: taint_sink
+    sinks:
+      - resetPassword(req.body.dn
+      - resetPassword(req.params.dn
+      - changePassword(req.body.dn
+    suggestion: "Resolve and validate the target DN against the authenticated user's identity before allowing password reset"

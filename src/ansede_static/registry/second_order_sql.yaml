@@ -1,0 +1,138 @@
+language: python
+framework: second_order_sql
+version: "1.0"
+description: "Second-order SQL Injection rules — persisted taint re-entering raw queries (CWE-89)"
+rules:
+  - id: registry/python/second-order-sql/django-rawsql-stored
+    title: "Second-Order SQL Injection via Django RawSQL() with stored data"
+    cwe: CWE-89
+    severity: critical
+    pattern_type: taint_sink
+    sinks:
+      - RawSQL(
+      - .extra(where=
+      - .extra(select=
+      - .extra(tables=
+    suggestion: "RawSQL()/extra() accept raw SQL fragments; validate stored values as safe identifiers before use"
+
+  - id: registry/python/second-order-sql/cursor-execute-stored
+    title: "Second-Order SQL Injection via cursor.execute() with stored/retrieved string"
+    cwe: CWE-89
+    severity: critical
+    pattern_type: taint_sink
+    sinks:
+      - cursor.execute(stored_
+      - cursor.execute(sql_
+      - cursor.execute(query_
+      - cursor.execute(raw_
+    suggestion: "Never reconstruct or replay stored SQL strings; use parameterized queries at both storage and execution points"
+
+  - id: registry/python/second-order-sql/sqlalchemy-text-stored
+    title: "Second-Order SQL Injection via SQLAlchemy text() with persisted value"
+    cwe: CWE-89
+    severity: critical
+    pattern_type: taint_sink
+    sinks:
+      - text(stored_
+      - text(sql_
+      - text(raw_
+      - text(query_
+      - "connection.execute(text("
+    suggestion: "Use text('SELECT ... WHERE col = :val', {'val': stored_val}) with bound parameters"
+
+  - id: registry/python/second-order-sql/sqlalchemy-order-by-stored
+    title: "Second-Order SQL Injection via SQLAlchemy order_by(text()) with stored sort key"
+    cwe: CWE-89
+    severity: high
+    pattern_type: taint_sink
+    sinks:
+      - ".order_by(text("
+      - ".order_by(column("
+    suggestion: "Validate sort column names against a declared allowlist before passing to order_by()"
+
+  - id: registry/python/second-order-sql/sqlalchemy-where-raw
+    title: "Second-Order SQL Injection via raw WHERE clause from stored value"
+    cwe: CWE-89
+    severity: critical
+    pattern_type: taint_sink
+    sinks:
+      - ".filter(text("
+      - ".where(text("
+      - ".having(text("
+    suggestion: "Use ORM column expressions or text() with :param bindings; never inject stored strings as raw SQL"
+
+  - id: registry/python/second-order-sql/flask-engine-execute-stored
+    title: "Second-Order SQL Injection via Flask/SQLAlchemy engine.execute() with stored string"
+    cwe: CWE-89
+    severity: critical
+    pattern_type: taint_sink
+    sinks:
+      - db.engine.execute(stored_
+      - db.session.execute(stored_
+      - engine.execute(stored_
+    suggestion: "Parameterize the stored value as a bound parameter, not as a SQL string fragment"
+
+  - id: registry/python/second-order-sql/pymysql-stored
+    title: "Second-Order SQL Injection via PyMySQL execute with stored string"
+    cwe: CWE-89
+    severity: critical
+    pattern_type: taint_sink
+    sinks:
+      - cursor.execute(stored
+      - connection.execute(stored
+      - conn.execute(stored
+    suggestion: "Use PyMySQL parameterized form: cursor.execute('SELECT %s', (stored_val,))"
+
+  - id: registry/python/second-order-sql/format-string-reassembly
+    title: "Second-Order SQL Injection via format/f-string reassembly of stored query parts"
+    cwe: CWE-89
+    severity: critical
+    pattern_type: taint_sink
+    sinks:
+      - "query = f\"SELECT"
+      - "query = \"SELECT \" + stored_"
+      - "sql = f\"SELECT"
+      - "sql = \"SELECT \" + "
+      - "query_str = f\""
+    suggestion: "Build queries with ORM APIs or parameterized text(); never reassemble SQL from stored fragments"
+
+  - id: registry/python/second-order-sql/cursor-mogrify-stored
+    title: "Second-Order SQL Injection via cursor.mogrify() with stored query string"
+    cwe: CWE-89
+    severity: critical
+    pattern_type: taint_sink
+    sinks:
+      - cursor.mogrify(sql_
+      - cursor.mogrify(stored_
+      - cursor.mogrify(query_
+    suggestion: "mogrify() builds a SQL string — treat its output as untrusted; use parameterized execute() instead"
+
+  - id: registry/python/second-order-sql/django-queryset-raw
+    title: "Second-Order SQL Injection via Django QuerySet.raw() with stored query"
+    cwe: CWE-89
+    severity: critical
+    pattern_type: taint_sink
+    sinks:
+      - .raw(sql_
+      - .raw(stored_
+      - .raw(query_
+    suggestion: "Use ORM methods or pass params= to .raw(); never interpolate stored strings into raw()"
+
+  - id: registry/python/second-order-sql/sqlalchemy-text-fstring
+    title: "Second-Order SQL Injection via SQLAlchemy text() with f-string expression"
+    cwe: CWE-89
+    severity: critical
+    pattern_type: regex
+    regex: "text\\(f['\"].*\\{.*\\}"
+    suggestion: "Never use f-strings inside text(); use text(':param') with bound parameters"
+
+  - id: registry/python/second-order-sql/psycopg-executemany-stored
+    title: "Second-Order SQL Injection via cursor.executemany() with stored query string"
+    cwe: CWE-89
+    severity: critical
+    pattern_type: taint_sink
+    sinks:
+      - cursor.executemany(sql_
+      - cursor.executemany(stored_
+      - cursor.executemany(query_
+    suggestion: "Parameterize the template string in executemany(); never reconstruct SQL from stored values"

@@ -1,0 +1,278 @@
+language: python
+framework: archive_extraction_py
+version: "1.0"
+description: "Archive extraction security rules: path traversal, zip bomb, and unsafe extraction (CWE-22, CWE-400)"
+rules:
+  - id: registry/python/archive/tarfile-extractall-user
+    title: "Path Traversal via tarfile.extractall() with user-controlled path"
+    cwe: CWE-22
+    severity: critical
+    pattern_type: taint_sink
+    sinks:
+      - tar.extractall(user_
+      - tar.extractall(request.
+      - tarfile.open(user_
+    suggestion: "Validate each TarInfo member for '..' and absolute paths before extraction; use extract() with member validation"
+
+  - id: registry/python/archive/tarfile-extract-member
+    title: "Path Traversal via tarfile.extract() with unvalidated member"
+    cwe: CWE-22
+    severity: critical
+    pattern_type: taint_sink
+    sinks:
+      - tar.extract(user_
+      - tar.extract(request.
+      - tf.extract(
+    suggestion: "Check member.name does not contain '..' or start with '/'; use tarfile.data_filter for Python 3.12+"
+
+  - id: registry/python/archive/zipfile-open-user
+    title: "Path Traversal or Zip Bomb via zipfile.ZipFile with user-supplied archive path"
+    cwe: CWE-22
+    severity: critical
+    pattern_type: taint_sink
+    sinks:
+      - zipfile.ZipFile(user_
+      - zipfile.ZipFile(request.
+      - ZipFile(user_
+    suggestion: "Validate the archive path and all member paths before extraction; enforce size limits against zip bombs"
+
+  - id: registry/python/archive/zipfile-extractall-user
+    title: "Path Traversal via zipfile.extractall() with user-controlled destination"
+    cwe: CWE-22
+    severity: critical
+    pattern_type: taint_sink
+    sinks:
+      - zf.extractall(user_
+      - zf.extractall(request.
+      - zip_ref.extractall(user_
+    suggestion: "Validate each ZipInfo filename; ensure extracted path starts with the intended base directory"
+
+  - id: registry/python/archive/zipimport-user
+    title: "Code Injection via zipimport.zipimporter with user-controlled archive"
+    cwe: CWE-94
+    severity: critical
+    pattern_type: taint_sink
+    sinks:
+      - zipimport.zipimporter(user_
+      - zipimport.zipimporter(request.
+    suggestion: "Never load ZIP archives containing Python modules from user-supplied paths"
+
+  - id: registry/python/archive/shutil-unpack-user
+    title: "Path Traversal via shutil.unpack_archive() with user-supplied archive or destination"
+    cwe: CWE-22
+    severity: critical
+    pattern_type: taint_sink
+    sinks:
+      - shutil.unpack_archive(user_
+      - shutil.unpack_archive(request.
+      - shutil.unpack_archive(filename
+    suggestion: "Validate archive path and extraction destination with realpath(); use a dedicated temp directory with size limits"
+
+  - id: registry/python/archive/tarfile-no-filter
+    title: "tarfile.extractall() without member filter (CVE-2007-4559 pattern)"
+    cwe: CWE-22
+    severity: critical
+    pattern_type: regex
+    regex: "\\.extractall\\((?!.*filter=)"
+    suggestion: "Use tar.extractall(path, filter='data') in Python 3.12+ or validate each member.name before extraction"
+
+  - id: registry/python/archive/tarfile-extractfile-user-member
+    title: "Path Traversal via tarfile.extractfile() with user-controlled member"
+    cwe: CWE-22
+    severity: high
+    pattern_type: taint_sink
+    sinks:
+      - tar.extractfile(user_
+      - tar.extractfile(request.
+    suggestion: "Validate member names and disallow path traversal sequences before extractfile"
+
+  - id: registry/python/archive/tarfile-getmember-user
+    title: "Unsafe tarfile.getmember() lookup using user input"
+    cwe: CWE-22
+    severity: high
+    pattern_type: taint_sink
+    sinks:
+      - tar.getmember(user_
+      - tar.getmember(request.
+    suggestion: "Restrict archive member selection to a validated allowlist"
+
+  - id: registry/python/archive/zipfile-open-member-user
+    title: "Unsafe zipfile.open() with user-controlled member name"
+    cwe: CWE-22
+    severity: high
+    pattern_type: taint_sink
+    sinks:
+      - zf.open(user_
+      - zf.open(request.
+    suggestion: "Validate member names before opening archive members"
+
+  - id: registry/python/archive/zipfile-read-user-member
+    title: "Unsafe zipfile.read() with user-controlled member name"
+    cwe: CWE-22
+    severity: high
+    pattern_type: taint_sink
+    sinks:
+      - zf.read(user_
+      - zf.read(request.
+    suggestion: "Disallow traversal-like member names and enforce allowed extensions"
+
+  - id: registry/python/archive/zip-slip-path-join
+    title: "Potential Zip Slip via joining extract dir with archive member filename"
+    cwe: CWE-22
+    severity: high
+    pattern_type: regex
+    regex: "os\\.path\\.join\\([^\\n]*member\\.(filename|name)"
+    suggestion: "Use canonical path checks to ensure output paths remain inside extraction directory"
+
+  - id: registry/python/archive/zipfile-extract-user-member
+    title: "Path Traversal via zipfile.extract() with user-controlled member"
+    cwe: CWE-22
+    severity: high
+    pattern_type: taint_sink
+    sinks:
+      - zf.extract(user_
+      - zf.extract(request.
+    suggestion: "Validate archive member names against traversal and absolute path patterns before extraction"
+
+  - id: registry/python/archive/shutil-unpack-user-dest
+    title: "Path Traversal via shutil.unpack_archive() with user-controlled destination"
+    cwe: CWE-22
+    severity: critical
+    pattern_type: taint_sink
+    sinks:
+      - shutil.unpack_archive(file_path, user_
+      - shutil.unpack_archive(file_path, request.
+      - shutil.unpack_archive(request.
+    suggestion: "Keep extraction destination fixed and validate canonical target paths"
+
+  - id: registry/python/archive/tarfile-extractall-members-user
+    title: "Unsafe tarfile.extractall() with user-controlled members list"
+    cwe: CWE-22
+    severity: high
+    pattern_type: taint_sink
+    sinks:
+      - tar.extractall(path=safe_dir, members=user_
+      - tar.extractall(safe_dir, user_
+    suggestion: "Do not accept members from user input; build members from validated archive metadata"
+
+  - id: registry/python/archive/zipfile-namelist-path-join
+    title: "Potential Zip Slip via loop over namelist + path join"
+    cwe: CWE-22
+    severity: high
+    pattern_type: regex
+    regex: "zf\\.namelist\\("
+    suggestion: "Resolve and validate each output path stays under extraction root"
+
+  - id: registry/python/archive/tar-member-name-path-join
+    title: "Potential Tar traversal via member.name joined into output path"
+    cwe: CWE-22
+    severity: high
+    pattern_type: regex
+    regex: "os\\.path\\.join\\([^\\n]*member\\.name"
+    suggestion: "Reject member names with traversal/absolute patterns before constructing output paths"
+
+  - id: registry/python/archive/patoolib-extract-user
+    title: "Path Traversal via patoolib.extract_archive() with user-controlled path"
+    cwe: CWE-22
+    severity: critical
+    pattern_type: taint_sink
+    sinks:
+      - patoolib.extract_archive(user_
+      - patoolib.extract_archive(request.
+      - patoolib.extract_archive(filename
+    suggestion: "Validate archive and destination paths against a trusted root before using patoolib"
+
+  - id: registry/python/archive/py7zr-extract-user
+    title: "Path Traversal via py7zr.SevenZipFile extraction with user-controlled target"
+    cwe: CWE-22
+    severity: critical
+    pattern_type: taint_sink
+    sinks:
+      - archive.extractall(path=user_
+      - archive.extractall(user_
+      - sz.extractall(path=user_
+    suggestion: "Restrict extraction target directory to a fixed safe path; verify with os.path.realpath"
+
+  - id: registry/python/archive/zipfile-extract-user-dest
+    title: "Path Traversal via zipfile.extract() with user-controlled destination directory"
+    cwe: CWE-22
+    severity: critical
+    pattern_type: taint_sink
+    sinks:
+      - zf.extract(member, user_
+      - zf.extract(name, request.
+      - zip_ref.extract(entry, user_
+    suggestion: "Use a fixed extraction root; validate resolved path starts inside the expected directory"
+
+  - id: registry/python/archive/rarfile-extract-user
+    title: "Path Traversal via rarfile extraction with user-controlled path"
+    cwe: CWE-22
+    severity: critical
+    pattern_type: taint_sink
+    sinks:
+      - rf.extractall(user_
+      - rf.extractall(request.
+      - rarfile.RarFile(user_
+    suggestion: "Validate archive paths and destination directories before rarfile extraction"
+
+  - id: registry/python/archive/bz2-open-user
+    title: "Path Traversal via bz2.open() with user-controlled filename"
+    cwe: CWE-22
+    severity: high
+    pattern_type: taint_sink
+    sinks:
+      - bz2.open(user_
+      - bz2.open(request.
+      - bz2.BZ2File(user_
+    suggestion: "Validate and resolve archive file paths to a trusted directory before opening"
+
+  - id: registry/python/archive/gzip-open-user
+    title: "Path Traversal via gzip.open() with user-controlled filename"
+    cwe: CWE-22
+    severity: high
+    pattern_type: taint_sink
+    sinks:
+      - gzip.open(user_
+      - gzip.open(request.
+      - gzip.GzipFile(user_
+    suggestion: "Validate file paths against a trusted base directory before opening gzip files"
+
+  - id: registry/python/archive/lzma-open-user
+    title: "Path Traversal via lzma.open() with user-controlled filename"
+    cwe: CWE-22
+    severity: high
+    pattern_type: taint_sink
+    sinks:
+      - lzma.open(user_
+      - lzma.open(request.
+      - lzma.LZMAFile(user_
+    suggestion: "Resolve LZMA file paths with realpath() and validate against a safe base directory"
+
+  - id: registry/python/archive/zipfile-testzip-user
+    title: "Zip Bomb risk via zipfile.testzip() with user-supplied archive"
+    cwe: CWE-400
+    severity: medium
+    pattern_type: taint_sink
+    sinks:
+      - zf.testzip()
+      - zip_ref.testzip()
+    suggestion: "Enforce size and entry-count limits before calling testzip on user-supplied archives"
+
+  - id: registry/python/archive/tarfile-open-mode-user
+    title: "tarfile.open() with user-controlled mode or fileobj"
+    cwe: CWE-22
+    severity: high
+    pattern_type: regex
+    regex: "tarfile\\.open\\([^\\n]*mode\\s*=\\s*request\\.|tarfile\\.open\\([^\\n]*fileobj\\s*=\\s*request\\."
+    suggestion: "Use a fixed safe mode (e.g. 'r:gz') and never derive mode or fileobj from request parameters"
+
+  - id: registry/python/archive/zipfile-setpassword-user
+    title: "zipfile opened with user-controlled password enabling zip-crypto oracle attacks"
+    cwe: CWE-326
+    severity: medium
+    pattern_type: taint_sink
+    sinks:
+      - zf.setpassword(user_
+      - zf.setpassword(request.
+      - zf.extractall(pwd=user_
+    suggestion: "Do not accept archive passwords from user input; use server-managed keys for encrypted archives"

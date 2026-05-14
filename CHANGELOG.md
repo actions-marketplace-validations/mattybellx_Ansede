@@ -3,6 +3,16 @@
 All notable changes to ansede-static are documented here.
 Format follows [Keep a Changelog](https://keepachangelog.com/).
 
+## [2.1.8] — 2026-05-14
+
+### Added — 1000-rule registry milestone
+- Expanded registry coverage from **980 to 1000 rules** with final additions across GraphQL (Python), JWT (Python), PyMongo, and Python template-engine packs.
+- Added **20 new phase regression tests** (`TestPhase15RegistryExpansion`) to lock in the final rule increment and prevent regressions.
+
+### Validated
+- Phase expansion suite: **242 passed**.
+- Web-wild gate (seed `151515`): **100.00% recall**, **100.00% precision**, **100.00% F1**, **0.00% FP rate**.
+
 ## [2.1.6] — 2026-05-11
 
 ### Fixed — Cross-platform pytest internal error in CI

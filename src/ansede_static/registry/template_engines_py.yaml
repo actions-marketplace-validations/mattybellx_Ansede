@@ -1,0 +1,219 @@
+language: python
+framework: template_engines_py
+version: "1.0"
+description: "Template engine injection and SSTI patterns in Python (CWE-94, CWE-79)"
+rules:
+  - id: registry/python/template/jinja2-template-user
+    title: "SSTI via jinja2.Template() with user-controlled template"
+    cwe: CWE-94
+    severity: critical
+    pattern_type: taint_sink
+    sinks:
+      - "Template(request."
+      - "jinja2.Template(request."
+      - "Template(data"
+    suggestion: "Never instantiate Jinja templates from user input; keep templates static and server-side."
+
+  - id: registry/python/template/jinja2-from-string-user
+    title: "SSTI via Jinja2 Environment.from_string() with user input"
+    cwe: CWE-94
+    severity: critical
+    pattern_type: taint_sink
+    sinks:
+      - "from_string(request."
+      - "env.from_string(request."
+      - "Environment().from_string(request."
+      - "env.from_string(template"
+      - "Environment().from_string(template"
+    suggestion: "Use precompiled templates loaded from trusted files; never evaluate user-controlled template strings."
+
+  - id: registry/python/template/jinja2-template-tainted-var
+    title: "SSTI via jinja2.Template() from tainted template variable"
+    cwe: CWE-94
+    severity: critical
+    pattern_type: taint_sink
+    sinks:
+      - "jinja2.Template(template"
+      - "Template(template"
+      - "Template(tmpl"
+    suggestion: "Do not compile template strings from untrusted sources, even through intermediate variables."
+
+  - id: registry/python/template/mako-template-user
+    title: "SSTI via mako.template.Template() with user template"
+    cwe: CWE-94
+    severity: critical
+    pattern_type: taint_sink
+    sinks:
+      - "mako.template.Template(request."
+      - "MakoTemplate(request."
+      - "TemplateLookup().get_template(request."
+    suggestion: "Do not compile Mako templates from request data. Restrict rendering to static template names."
+
+  - id: registry/python/template/tornado-template-user
+    title: "SSTI via tornado.template.Template() with user content"
+    cwe: CWE-94
+    severity: high
+    pattern_type: taint_sink
+    sinks:
+      - "tornado.template.Template(request."
+      - "Template(request.args.get("
+      - "Template(request.body"
+    suggestion: "Avoid passing untrusted strings into Tornado Template constructors."
+
+  - id: registry/python/template/pystache-render-user-template
+    title: "Template injection via pystache.render() with user template"
+    cwe: CWE-94
+    severity: high
+    pattern_type: taint_sink
+    sinks:
+      - "pystache.render(request."
+      - "pystache.render(template,"
+      - "render(request.args.get('template'"
+    suggestion: "Only render trusted template sources; treat template bodies as code, not data."
+
+  - id: registry/python/template/chameleon-page-template-user
+    title: "SSTI via chameleon PageTemplate with user-controlled source"
+    cwe: CWE-94
+    severity: high
+    pattern_type: taint_sink
+    sinks:
+      - "PageTemplate(request."
+      - "PageTemplate(body"
+      - "chameleon.PageTemplate(request."
+    suggestion: "Instantiate Chameleon templates only from static assets, not request payloads."
+
+  - id: registry/python/template/genshi-markup-template-user
+    title: "SSTI via genshi MarkupTemplate() from user-controlled text"
+    cwe: CWE-94
+    severity: high
+    pattern_type: taint_sink
+    sinks:
+      - "MarkupTemplate(request."
+      - "genshi.template.MarkupTemplate(request."
+    suggestion: "Do not compile Genshi templates from user input."
+
+  - id: registry/python/template/flask-render-template-string-body
+    title: "SSTI via Flask render_template_string() with request body"
+    cwe: CWE-94
+    severity: critical
+    pattern_type: taint_sink
+    sinks:
+      - "render_template_string(request.data"
+      - "render_template_string(request.form"
+      - "render_template_string(request.args"
+      - "render_template_string(request.values"
+      - "render_template_string(template"
+    suggestion: "Prefer render_template() with static template files; never render user-provided template strings."
+
+  - id: registry/python/template/markupsafe-markup-user
+    title: "XSS risk via Markup() wrapping untrusted input"
+    cwe: CWE-79
+    severity: high
+    pattern_type: taint_sink
+    sinks:
+      - "Markup(request."
+      - "markupsafe.Markup(request."
+      - "Markup(user_"
+    suggestion: "Avoid forcing untrusted values as safe HTML; sanitize and escape before rendering."
+
+  - id: registry/python/template/django-template-user
+    title: "SSTI via django.template.Template() with user template body"
+    cwe: CWE-94
+    severity: high
+    pattern_type: taint_sink
+    sinks:
+      - "django.template.Template(request."
+      - "Template(request.POST"
+      - "Template(request.GET"
+    suggestion: "Never compile Django templates from user data. Use static templates and context-only user input."
+
+  - id: registry/python/template/django-engine-from-string-user
+    title: "SSTI via django.template.Engine.from_string() with user template"
+    cwe: CWE-94
+    severity: high
+    pattern_type: taint_sink
+    sinks:
+      - "Engine().from_string(request."
+      - "engine.from_string(request."
+      - "engine.from_string(template"
+    suggestion: "Never call Engine.from_string() with untrusted template bodies; keep templates static."
+
+  - id: registry/python/template/django-template-tainted-var
+    title: "SSTI via django.template.Template() from tainted variable"
+    cwe: CWE-94
+    severity: high
+    pattern_type: taint_sink
+    sinks:
+      - "django.template.Template(template"
+      - "django.template.Template(tmpl"
+      - "Template(template)"
+    suggestion: "Do not compile Django templates from untrusted variables; use static template files."
+
+  - id: registry/python/template/mako-template-tainted-var
+    title: "SSTI via mako.template.Template() from tainted variable"
+    cwe: CWE-94
+    severity: high
+    pattern_type: taint_sink
+    sinks:
+      - "mako.template.Template(template"
+      - "mako.template.Template(tmpl"
+    suggestion: "Avoid compiling Mako templates from untrusted strings; keep template bodies trusted and static."
+
+  - id: registry/python/template/tornado-template-tainted-var
+    title: "SSTI via tornado.template.Template() from tainted variable"
+    cwe: CWE-94
+    severity: high
+    pattern_type: taint_sink
+    sinks:
+      - "tornado.template.Template(template"
+      - "tornado.template.Template(tmpl"
+    suggestion: "Do not instantiate Tornado templates from user-controlled variables."
+
+  - id: registry/python/template/jinja2-autoescape-disabled
+    title: "Jinja2 autoescape disabled"
+    cwe: CWE-79
+    severity: high
+    pattern_type: regex
+    regex: "Environment\\(.*autoescape\\s*=\\s*False"
+    suggestion: "Keep autoescape enabled for HTML rendering contexts."
+
+  - id: registry/python/template/flask-render-template-string-fstring
+    title: "SSTI risk via render_template_string with f-string"
+    cwe: CWE-94
+    severity: critical
+    pattern_type: taint_sink
+    sinks:
+      - render_template_string(f"
+      - render_template_string(f'
+      - render_template_string(template +
+    suggestion: "Avoid dynamic template string construction; use static templates with context variables."
+
+  - id: registry/python/template/mako-templatelookup-user-directory
+    title: "Mako TemplateLookup with user-controlled template directory"
+    cwe: CWE-22
+    severity: high
+    pattern_type: taint_sink
+    sinks:
+      - TemplateLookup(directories=[request.
+      - TemplateLookup(directories=[user_
+      - lookup = TemplateLookup(directories=[request.
+    suggestion: "Restrict template directories to fixed trusted paths."
+
+  - id: registry/python/template/django-mark-safe-user
+    title: "Django mark_safe used on untrusted input"
+    cwe: CWE-79
+    severity: high
+    pattern_type: taint_sink
+    sinks:
+      - mark_safe(request.
+      - mark_safe(user_
+      - mark_safe(form.cleaned_data
+    suggestion: "Avoid mark_safe on user input; sanitize before rendering."
+
+  - id: registry/python/template/jinja2-finalize-markup-user
+    title: "Jinja2 finalize callback marks user data as safe HTML"
+    cwe: CWE-79
+    severity: high
+    pattern_type: regex
+    regex: "Environment\\(.*finalize\\s*=\\s*Markup"
+    suggestion: "Do not globally trust output via finalize=Markup."

@@ -1,0 +1,236 @@
+language: python
+framework: api_security
+version: "1.0"
+description: "API security rules — API key exposure, broken auth, rate limiting, CORS misconfiguration (CWE-287, CWE-284, CWE-352)"
+rules:
+  - id: registry/python/api/key-in-url
+    title: "API key transmitted in URL query parameter"
+    cwe: CWE-598
+    severity: high
+    pattern_type: taint_sink
+    sinks:
+      - "?api_key="
+      - "?apikey="
+      - "?token="
+      - "?key="
+      - "?access_token="
+    suggestion: "Pass API keys in Authorization headers or POST body, never in GET query parameters (logged by servers/proxies)"
+
+  - id: registry/python/api/hardcoded-api-key
+    title: "Hardcoded API key or token in source code"
+    cwe: CWE-798
+    severity: critical
+    pattern_type: regex
+    regex: "(API_KEY|api_key|APIKEY|SECRET_KEY|secret_key|ACCESS_TOKEN|access_token)\\s*=\\s*['\"][A-Za-z0-9_\\-]{16,}['\"]"
+    suggestion: "Load API keys from environment variables; use a secrets manager in production"
+
+  - id: registry/python/api/cors-wildcard
+    title: "CORS configured with wildcard origin (*)"
+    cwe: CWE-346
+    severity: high
+    pattern_type: taint_sink
+    sinks:
+      - "Access-Control-Allow-Origin\": \"*\""
+      - "Access-Control-Allow-Origin': '*'"
+      - "CORS(app, origins=\"*\""
+      - "CORS(app, origins='*'"
+      - "allow_origins=[\"*\"]"
+      - "allow_origins=['*']"
+    suggestion: "Restrict CORS to specific trusted origins; wildcards allow any website to make credentialed requests"
+
+  - id: registry/python/api/cors-allow-credentials-wildcard
+    title: "CORS allows credentials with wildcard origin"
+    cwe: CWE-346
+    severity: critical
+    pattern_type: taint_sink
+    sinks:
+      - "allow_credentials=True"
+      - "supports_credentials=True"
+    suggestion: "Credentials cannot be sent with wildcard origins; specify exact origins when allowing credentials"
+
+  - id: registry/python/api/no-rate-limit
+    title: "API endpoint missing rate limiting"
+    cwe: CWE-770
+    severity: medium
+    pattern_type: taint_sink
+    sinks:
+      - "@app.route(\"/api/login\""
+      - "@app.route('/api/login'"
+      - "@app.route(\"/api/register\""
+      - "@router.post(\"/login\""
+    suggestion: "Apply rate limiting to authentication endpoints using Flask-Limiter, slowapi, or express-rate-limit"
+
+  - id: registry/python/api/missing-authentication
+    title: "API endpoint without authentication decorator"
+    cwe: CWE-306
+    severity: high
+    pattern_type: taint_sink
+    sinks:
+      - "@app.route(\"/admin\""
+      - "@app.route('/admin'"
+      - "@app.route(\"/internal\""
+      - "@router.get(\"/admin\""
+    suggestion: "Add @login_required or JWT authentication to admin/internal API endpoints"
+
+  - id: registry/python/api/mass-assignment
+    title: "Mass Assignment via request dict/body spread into model"
+    cwe: CWE-915
+    severity: high
+    pattern_type: taint_sink
+    sinks:
+      - Model(**request.json)
+      - Model(**request.form)
+      - User(**data)
+    suggestion: "Explicitly pick allowed fields; never unpack full request bodies into ORM models"
+
+  - id: registry/python/api/idor-no-ownership
+    title: "IDOR — direct database lookup by user-supplied ID without ownership check"
+    cwe: CWE-639
+    severity: high
+    pattern_type: taint_sink
+    sinks:
+      - ".get(id=request.args.get("
+      - ".get(id=request.json.get("
+      - ".get_or_404(id"
+      - ".filter_by(id=request."
+    suggestion: "Add .filter_by(user_id=current_user.id, id=resource_id) to enforce ownership"
+
+  - id: registry/python/api/sensitive-data-response
+    title: "Sensitive fields returned in API response without filtering"
+    cwe: CWE-200
+    severity: medium
+    pattern_type: taint_sink
+    sinks:
+      - jsonify(user.__dict__)
+      - jsonify(vars(user))
+      - "return user.to_dict()"
+    suggestion: "Explicitly serialize only safe fields; exclude password, tokens, and internal IDs from responses"
+
+  - id: registry/python/api/unvalidated-redirect-param
+    title: "Open Redirect via unvalidated 'next' or 'redirect' parameter"
+    cwe: CWE-601
+    severity: high
+    pattern_type: taint_sink
+    sinks:
+      - "redirect(request.args.get('next'"
+      - "redirect(request.args.get(\"next\""
+      - "redirect(request.args.get('redirect'"
+      - "redirect(request.form.get('next'"
+    suggestion: "Validate 'next' URLs against a whitelist of internal paths before redirecting"
+
+  - id: registry/python/api/http-basic-over-http
+    title: "HTTP Basic Auth over unencrypted HTTP connection"
+    cwe: CWE-319
+    severity: high
+    pattern_type: taint_sink
+    sinks:
+      - "HTTPBasicAuth()"
+      - "flask_httpauth.HTTPBasicAuth"
+    suggestion: "HTTP Basic Auth must only be used over HTTPS/TLS; redirect all HTTP to HTTPS"
+
+  - id: registry/python/api/debug-mode-production
+    title: "Flask/Django debug mode enabled in production code"
+    cwe: CWE-94
+    severity: critical
+    pattern_type: taint_sink
+    sinks:
+      - "app.run(debug=True)"
+      - "DEBUG = True"
+    suggestion: "Disable debug mode in production; use environment variable DEBUG=False and secure settings"
+
+  - id: registry/python/api/jwt-verify-signature-false
+    title: "JWT signature verification disabled in API auth flow"
+    cwe: CWE-347
+    severity: critical
+    pattern_type: regex
+    regex: "jwt\\.decode\\([^)]*verify_signature['\"]?\\s*:\\s*False"
+    suggestion: "Always verify JWT signatures and constrain acceptable algorithms"
+
+  - id: registry/python/api/trust-x-forwarded-for
+    title: "Authentication/authorization logic trusts X-Forwarded-For header"
+    cwe: CWE-290
+    severity: high
+    pattern_type: taint_sink
+    sinks:
+      - request.headers.get('X-Forwarded-For')
+      - request.headers.get("X-Forwarded-For")
+      - request.META.get('HTTP_X_FORWARDED_FOR')
+    suggestion: "Use trusted proxy configuration and server-validated client IP extraction"
+
+  - id: registry/python/api/password-in-url
+    title: "Password transmitted in URL query string"
+    cwe: CWE-598
+    severity: critical
+    pattern_type: taint_sink
+    sinks:
+      - "?password="
+      - "request.args.get('password'"
+      - "request.GET.get('password'"
+    suggestion: "Send credentials in secure request bodies over HTTPS, never in URL parameters"
+
+  - id: registry/python/api/session-cookie-httponly-false
+    title: "Session cookie configured without HttpOnly"
+    cwe: CWE-1004
+    severity: high
+    pattern_type: regex
+    regex: "SESSION_COOKIE_HTTPONLY\\s*=\\s*False|set_cookie\\(.*httponly\\s*=\\s*False"
+    suggestion: "Set HttpOnly on all session/auth cookies"
+
+  - id: registry/python/api/csrf-exempt-auth-endpoint
+    title: "CSRF protection disabled on authentication endpoint"
+    cwe: CWE-352
+    severity: high
+    pattern_type: regex
+    regex: "@csrf\\.exempt"
+    suggestion: "Do not exempt auth endpoints from CSRF; use CSRF tokens and same-site cookies"
+
+  - id: registry/python/api/weak-random-token
+    title: "Weak token generation using non-cryptographic random source"
+    cwe: CWE-330
+    severity: high
+    pattern_type: regex
+    regex: "(token|api_key|reset_token)\\s*=\\s*str\\(random\\.random\\("
+    suggestion: "Use secrets.token_urlsafe() or secrets.token_hex() for security tokens"
+
+  - id: registry/python/api/flask-secret-key-hardcoded
+    title: "Flask SECRET_KEY hardcoded in source"
+    cwe: CWE-798
+    severity: critical
+    pattern_type: regex
+    regex: "SECRET_KEY\\s*=\\s*['\"][^'\"]{8,}['\"]"
+    suggestion: "Load SECRET_KEY from environment or a secret manager; rotate compromised keys"
+
+  - id: registry/python/api/cors-origin-reflection
+    title: "CORS origin reflected from user-controlled request header"
+    cwe: CWE-346
+    severity: high
+    pattern_type: taint_sink
+    sinks:
+      - response.headers['Access-Control-Allow-Origin'] = request.headers.get('Origin'
+      - response.headers["Access-Control-Allow-Origin"] = request.headers.get("Origin"
+      - allow_origin = request.headers.get('Origin'
+    suggestion: "Set Access-Control-Allow-Origin from a strict allowlist, never by direct reflection"
+
+  - id: registry/python/api/jwt-decode-no-algorithms
+    title: "JWT decode called without explicit algorithm allowlist"
+    cwe: CWE-347
+    severity: high
+    pattern_type: regex
+    regex: "jwt\\.decode\\([^\\n]*\\)"
+    suggestion: "Always pass explicit algorithms=[...] and verify issuer/audience claims"
+
+  - id: registry/python/api/session-cookie-secure-false
+    title: "Session cookie configured without Secure flag"
+    cwe: CWE-614
+    severity: high
+    pattern_type: regex
+    regex: "SESSION_COOKIE_SECURE\\s*=\\s*False|set_cookie\\(.*secure\\s*=\\s*False"
+    suggestion: "Set Secure=True for authentication/session cookies and enforce HTTPS"
+
+  - id: registry/python/api/jwt-audience-verification-disabled
+    title: "JWT audience verification disabled"
+    cwe: CWE-345
+    severity: high
+    pattern_type: regex
+    regex: "verify_aud['\"]?\\s*[:=]\\s*False"
+    suggestion: "Enable audience validation and enforce expected aud values for all tokens"

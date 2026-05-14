@@ -961,6 +961,28 @@ def old():
 """
         assert not _has_cwe(code, "CWE-601")
 
+    def test_redirect_get_absolute_url_safe(self):
+        code = """
+from django.http import HttpResponseRedirect
+
+def shortcut(request, obj):
+    absurl = obj.get_absolute_url()
+    return HttpResponseRedirect(absurl)
+"""
+        assert not _has_cwe(code, "CWE-601")
+
+    def test_redirect_canonical_object_domain_safe(self):
+        code = """
+from django.http import HttpResponseRedirect
+
+def shortcut(request, obj):
+    absurl = obj.get_absolute_url()
+    object_domain = "example.com"
+    protocol = request.scheme
+    return HttpResponseRedirect("%s://%s%s" % (protocol, object_domain, absurl))
+"""
+        assert not _has_cwe(code, "CWE-601")
+
 
 # ── CWE-287: Two-line Auth Bypass in Routes (Rule 23) ────────────────────────
 

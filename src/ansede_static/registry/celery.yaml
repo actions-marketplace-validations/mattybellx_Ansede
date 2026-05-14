@@ -139,3 +139,46 @@ rules:
     pattern_type: regex
     regex: "result_backend\\s*=\\s*['\"](?:redis|db)://"
     suggestion: "Encrypt sensitive results or use ignore_result=True for tasks with sensitive output"
+
+  - id: registry/celery/task/subprocess-shell-true
+    title: "Command Injection risk via subprocess with shell=True in task"
+    cwe: CWE-78
+    severity: critical
+    pattern_type: regex
+    regex: "subprocess\\.(run|Popen|call)\\([^\\n]*shell\\s*=\\s*True"
+    suggestion: "Use shell=False and pass commands as argument lists"
+
+  - id: registry/celery/task/requests-verify-false
+    title: "TLS certificate verification disabled in HTTP call from task"
+    cwe: CWE-295
+    severity: high
+    pattern_type: regex
+    regex: "requests\\.(get|post|put|delete)\\([^\\n]*verify\\s*=\\s*False"
+    suggestion: "Keep verify=True and pin trusted CA chains when needed"
+
+  - id: registry/celery/broker/redis-no-tls
+    title: "Celery Redis broker configured without TLS"
+    cwe: CWE-319
+    severity: high
+    pattern_type: regex
+    regex: "broker_url\\s*=\\s*['\"]redis://"
+    suggestion: "Use rediss:// and configure TLS options for Redis broker connections"
+
+  - id: registry/celery/deserialization/dill-serializer
+    title: "Celery using dill serializer (unsafe deserialization)"
+    cwe: CWE-502
+    severity: critical
+    pattern_type: regex
+    regex: "(task_serializer|CELERY_TASK_SERIALIZER)\\s*=\\s*['\"]dill['\"]"
+    suggestion: "Prefer JSON serializer and reject unsafe object serializers"
+
+  - id: registry/celery/task/importlib-user-module
+    title: "Dynamic import of user-controlled module name in Celery task"
+    cwe: CWE-94
+    severity: high
+    pattern_type: taint_sink
+    sinks:
+      - importlib.import_module(task_arg
+      - importlib.import_module(kwargs[
+      - import_module(task_arg
+    suggestion: "Use an allowlist of approved module names before dynamic imports"

@@ -198,6 +198,61 @@ rules:
       - urlopen(request.
     suggestion: "Validate URLs against an allowlist; use requests with a URL validator"
 
+  - id: registry/requests/ssrf/httpx-get-user-url
+    title: "SSRF via httpx.get with user-controlled URL"
+    cwe: CWE-918
+    severity: high
+    pattern_type: taint_sink
+    sinks:
+      - httpx.get(user_
+      - httpx.get(request.
+      - await httpx.AsyncClient().get(user_
+    suggestion: "Validate URLs against an allowlist; block private IP ranges before making requests"
+
+  - id: registry/requests/auth/oauth-token-logged
+    title: "OAuth access token logged in plaintext"
+    cwe: CWE-532
+    severity: high
+    pattern_type: taint_sink
+    sinks:
+      - logger.debug(access_token
+      - logger.info(access_token
+      - logger.debug(token_response
+      - print(access_token
+    suggestion: "Never log OAuth tokens; mask or redact them in all log output"
+
+  - id: registry/requests/ssrf/urllib3-user-url
+    title: "SSRF via urllib3 PoolManager request with user-controlled URL"
+    cwe: CWE-918
+    severity: high
+    pattern_type: taint_sink
+    sinks:
+      - 'http.request("GET", user_'
+      - 'http.request("POST", user_'
+      - "http.request('GET', request."
+      - 'pool.request("GET", user_'
+    suggestion: "Validate target URLs against an allowlist before using urllib3 directly"
+
+  - id: registry/requests/response/xml-response-xxe
+    title: "XXE via parsing external HTTP response body as XML"
+    cwe: CWE-611
+    severity: critical
+    pattern_type: taint_sink
+    sinks:
+      - lxml.etree.fromstring(response.content
+      - xml.etree.ElementTree.fromstring(response.content
+      - lxml.etree.fromstring(r.content
+      - ElementTree.fromstring(response.content
+    suggestion: "Use defusedxml.ElementTree; set resolve_entities=False when parsing external XML"
+
+  - id: registry/requests/tls/no-hostname-check
+    title: "TLS hostname verification explicitly disabled"
+    cwe: CWE-295
+    severity: critical
+    pattern_type: regex
+    regex: 'check_hostname\s*=\s*False|assert_hostname\s*=\s*False'
+    suggestion: "Never disable hostname verification; use ssl.create_default_context() which enables it by default"
+
   - id: registry/requests/ssrf/urllib2
     title: "SSRF via urllib2.urlopen (Python 2 legacy)"
     cwe: CWE-918

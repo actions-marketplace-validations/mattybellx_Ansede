@@ -1,0 +1,273 @@
+language: javascript
+framework: prototype_pollution_js
+version: "1.0"
+description: "Prototype pollution security rules for JavaScript/Node.js (CWE-1321)"
+rules:
+  - id: registry/js/proto-pollution/object-assign-req
+    title: "Prototype Pollution via Object.assign() with unsanitized request body"
+    cwe: CWE-1321
+    severity: high
+    pattern_type: taint_sink
+    sinks:
+      - Object.assign({}, req.body
+      - Object.assign(target, req.body
+      - Object.assign(config, req.
+    suggestion: "Use a sanitized subset of req.body; validate all keys against an allowlist before merging"
+
+  - id: registry/js/proto-pollution/lodash-merge-req
+    title: "Prototype Pollution via lodash _.merge() with request body"
+    cwe: CWE-1321
+    severity: critical
+    pattern_type: taint_sink
+    sinks:
+      - _.merge(obj, req.body
+      - _.merge(config, req.
+      - _.merge({}, req.body
+    suggestion: "Use lodash >= 4.17.21; sanitize input to remove __proto__, constructor, and prototype keys before merging"
+
+  - id: registry/js/proto-pollution/deepmerge-req
+    title: "Prototype Pollution via deepmerge/deep-extend with request body"
+    cwe: CWE-1321
+    severity: high
+    pattern_type: taint_sink
+    sinks:
+      - deepmerge(defaults, req.body
+      - deepMerge(config, req.
+      - merge(obj, req.body
+    suggestion: "Strip __proto__ and constructor keys from request data before any deep merge operation"
+
+  - id: registry/js/proto-pollution/jquery-extend-deep
+    title: "Prototype Pollution via jQuery.extend(true, ...) with user data"
+    cwe: CWE-1321
+    severity: high
+    pattern_type: taint_sink
+    sinks:
+      - $.extend(true, obj, req.body
+      - jQuery.extend(true, config, req.
+    suggestion: "Sanitize keys; avoid deep jQuery.extend with untrusted data; use jQuery >= 3.4.0"
+
+  - id: registry/js/proto-pollution/constructor-property-access
+    title: "Prototype Pollution via bracket notation with user-controlled key"
+    cwe: CWE-1321
+    severity: high
+    pattern_type: taint_sink
+    sinks:
+      - obj[req.body.key]
+      - obj[req.query.key]
+      - target[req.params.
+    suggestion: "Block __proto__, constructor, and prototype keys; use hasOwnProperty check before property assignment"
+
+  - id: registry/js/proto-pollution/lodash-set-req
+    title: "Prototype Pollution via lodash _.set() with user-controlled path"
+    cwe: CWE-1321
+    severity: critical
+    pattern_type: taint_sink
+    sinks:
+      - _.set(obj, req.body.
+      - _.set(target, req.query.
+      - _.set(config, req.params.
+    suggestion: "Validate path argument against allowlist; block paths containing __proto__, constructor, or prototype"
+
+  - id: registry/js/proto-pollution/spread-merge-req
+    title: "Prototype Pollution risk via object spread with full request body"
+    cwe: CWE-1321
+    severity: medium
+    pattern_type: taint_sink
+    sinks:
+      - "{ ...req.body }"
+      - "{ ...req.body,"
+      - "Object.create(null, req.body"
+    suggestion: "Extract only known-safe keys from req.body before spreading; never spread the whole body into config objects"
+
+  - id: registry/js/proto-pollution/lodash-mergewith-req
+    title: "Prototype Pollution via lodash _.mergeWith() with user input"
+    cwe: CWE-1321
+    severity: critical
+    pattern_type: taint_sink
+    sinks:
+      - _.mergeWith(obj, req.body
+      - _.mergeWith(config, req.
+    suggestion: "Sanitize keys and block __proto__/constructor/prototype before mergeWith"
+
+  - id: registry/js/proto-pollution/lodash-defaultsdeep-req
+    title: "Prototype Pollution via lodash _.defaultsDeep() with user input"
+    cwe: CWE-1321
+    severity: high
+    pattern_type: taint_sink
+    sinks:
+      - _.defaultsDeep(obj, req.body
+      - _.defaultsDeep(config, req.
+    suggestion: "Do not feed untrusted objects into defaultsDeep; allowlist keys first"
+
+  - id: registry/js/proto-pollution/lodash-zipobjectdeep-req
+    title: "Prototype Pollution via _.zipObjectDeep with user-controlled paths"
+    cwe: CWE-1321
+    severity: critical
+    pattern_type: taint_sink
+    sinks:
+      - _.zipObjectDeep(req.body.paths
+      - _.zipObjectDeep(req.query.paths
+    suggestion: "Reject path entries containing __proto__, constructor, prototype"
+
+  - id: registry/js/proto-pollution/deepmerge-all-req
+    title: "Prototype Pollution via deepmerge.all() with untrusted request object"
+    cwe: CWE-1321
+    severity: high
+    pattern_type: taint_sink
+    sinks:
+      - deepmerge.all([defaults, req.body
+      - deepmerge.all([config, req.
+    suggestion: "Filter untrusted objects before deepmerge.all and lock down dangerous keys"
+
+  - id: registry/js/proto-pollution/object-assign-req-query
+    title: "Prototype Pollution via Object.assign() with req.query"
+    cwe: CWE-1321
+    severity: high
+    pattern_type: taint_sink
+    sinks:
+      - Object.assign({}, req.query
+      - Object.assign(config, req.query
+    suggestion: "Treat query objects as untrusted; sanitize keys before Object.assign"
+
+  - id: registry/js/proto-pollution/object-defineproperty-user-key
+    title: "Prototype Pollution via Object.defineProperty() with user key"
+    cwe: CWE-1321
+    severity: high
+    pattern_type: taint_sink
+    sinks:
+      - Object.defineProperty(obj, req.body.
+      - Object.defineProperty(target, req.query.
+    suggestion: "Reject dangerous keys and restrict dynamic property definitions"
+
+  - id: registry/js/proto-pollution/for-in-req-body
+    title: "Prototype Pollution risk via for-in over req.body and assignment"
+    cwe: CWE-1321
+    severity: high
+    pattern_type: regex
+    regex: "for\\s*\\(const\\s+\\w+\\s+in\\s+req\\.body\\)"
+    suggestion: "Iterate over vetted keys only (Object.keys allowlist), not arbitrary request body properties"
+
+  - id: registry/js/proto-pollution/for-in-req-query
+    title: "Prototype Pollution risk via for-in over req.query"
+    cwe: CWE-1321
+    severity: medium
+    pattern_type: regex
+    regex: "for\\s*\\(const\\s+\\w+\\s+in\\s+req\\.query\\)"
+    suggestion: "Normalize and validate query keys before copying into objects"
+
+  - id: registry/js/proto-pollution/dot-prop-set-req
+    title: "Prototype Pollution via dot-prop.set with user path"
+    cwe: CWE-1321
+    severity: high
+    pattern_type: taint_sink
+    sinks:
+      - dotProp.set(obj, req.body.
+      - dotProp.set(config, req.query.
+    suggestion: "Sanitize dot paths and block __proto__/constructor/prototype segments"
+
+  - id: registry/js/proto-pollution/fromentries-req-body
+    title: "Prototype Pollution risk via Object.fromEntries(Object.entries(req.body))"
+    cwe: CWE-1321
+    severity: medium
+    pattern_type: regex
+    regex: "Object\\.fromEntries\\(Object\\.entries\\(req\\.body\\)"
+    suggestion: "Filter and validate keys before reconstructing objects from request entries"
+
+  - id: registry/js/proto-pollution/qs-parse-allowproto
+    title: "Prototype Pollution enabled via qs.parse with allowPrototypes option"
+    cwe: CWE-1321
+    severity: high
+    pattern_type: regex
+    regex: "qs\\.parse\\([^\\n]*allowPrototypes:\\s*true"
+    suggestion: "Never set allowPrototypes to true; use qs >= 6.7.3 which blocks proto by default"
+
+  - id: registry/js/proto-pollution/hoek-merge-req
+    title: "Prototype Pollution via Hoek.merge() or Hoek.clone() with user input"
+    cwe: CWE-1321
+    severity: high
+    pattern_type: taint_sink
+    sinks:
+      - Hoek.merge(config, req.body
+      - Hoek.merge(obj, req.
+      - hoek.merge(config, req.
+    suggestion: "Upgrade to @hapi/hoek >= 9.0.3 and sanitize keys before any deep merge"
+
+  - id: registry/js/proto-pollution/immer-produce-req
+    title: "Prototype Pollution via immer produce() with user-controlled recipe object"
+    cwe: CWE-1321
+    severity: high
+    pattern_type: taint_sink
+    sinks:
+      - produce(state, req.body
+      - produce(draft, req.
+      - immer.produce(state, req.
+    suggestion: "Validate recipe input before passing to immer produce; sanitize __proto__ and constructor keys"
+
+  - id: registry/js/proto-pollution/mixin-req-body
+    title: "Prototype Pollution via mixin/extend with unsanitized request body"
+    cwe: CWE-1321
+    severity: high
+    pattern_type: taint_sink
+    sinks:
+      - mixin(obj, req.body
+      - extend(config, req.body
+      - utils.mixin(target, req.
+    suggestion: "Block dangerous keys and validate before any mixin or extend call with request data"
+
+  - id: registry/js/proto-pollution/object-entries-reduce-req
+    title: "Prototype Pollution via Object.entries + reduce pattern merging req.body"
+    cwe: CWE-1321
+    severity: medium
+    pattern_type: regex
+    regex: "Object\\.entries\\(req\\.body\\)\\.reduce"
+    suggestion: "Filter out __proto__, constructor, and prototype keys before reduce-based object construction"
+
+  - id: registry/js/proto-pollution/klona-deep-req
+    title: "Prototype Pollution risk via klona deep clone of user-controlled object"
+    cwe: CWE-1321
+    severity: high
+    pattern_type: taint_sink
+    sinks:
+      - klona(req.body
+      - klona(req.query
+    suggestion: "Sanitize and allowlist keys before deep-cloning request objects with klona"
+
+  - id: registry/js/proto-pollution/merge-deep-req
+    title: "Prototype Pollution via merge-deep with user-controlled object"
+    cwe: CWE-1321
+    severity: high
+    pattern_type: taint_sink
+    sinks:
+      - mergeDeep(config, req.body
+      - mergeDeep(obj, req.
+    suggestion: "Strip __proto__, constructor, and prototype keys before using merge-deep with request data"
+
+  - id: registry/js/proto-pollution/json-merge-patch-req
+    title: "Prototype Pollution via json-merge-patch apply with user-controlled patch"
+    cwe: CWE-1321
+    severity: high
+    pattern_type: taint_sink
+    sinks:
+      - jsonmergepatch.apply(state, req.body
+      - mergePatch.apply(config, req.
+      - applyPatch(target, req.body
+    suggestion: "Validate and sanitize patch objects to block __proto__ and constructor key injection"
+
+  - id: registry/js/proto-pollution/object-fromentries-map-req
+    title: "Prototype Pollution risk via new Map + Object.fromEntries built from req params"
+    cwe: CWE-1321
+    severity: medium
+    pattern_type: regex
+    regex: "Object\\.fromEntries\\(new\\s+Map\\([^\\n]*req\\."
+    suggestion: "Filter dangerous keys before reconstructing objects via Map and fromEntries"
+
+  - id: registry/js/proto-pollution/reflect-set-user-key
+    title: "Prototype Pollution via Reflect.set() with user-controlled property key"
+    cwe: CWE-1321
+    severity: high
+    pattern_type: taint_sink
+    sinks:
+      - Reflect.set(obj, req.body.
+      - Reflect.set(target, req.query.
+      - Reflect.set(config, req.params.
+    suggestion: "Block __proto__, constructor, and prototype as property names before using Reflect.set with dynamic keys"

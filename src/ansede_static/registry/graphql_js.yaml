@@ -110,3 +110,65 @@ rules:
       - Model.find(args.filter
       - collection.find(args.where
     suggestion: "Use express-mongo-sanitize; never pass GraphQL args directly to MongoDB find()"
+
+  - id: registry/graphql/playground/enabled-production
+    title: "GraphQL Playground enabled in production"
+    cwe: CWE-200
+    severity: medium
+    pattern_type: regex
+    regex: "playground\\s*:\\s*true"
+    suggestion: "Disable playground in production to reduce schema and endpoint exposure"
+
+  - id: registry/graphql/graphiql/enabled-production
+    title: "GraphiQL enabled in production"
+    cwe: CWE-200
+    severity: medium
+    pattern_type: regex
+    regex: "graphiql\\s*:\\s*true"
+    suggestion: "Disable GraphiQL in production or restrict to internal admin environments"
+
+  - id: registry/graphql/injection/child-process-args
+    title: "Command Injection in GraphQL resolver via child process arguments"
+    cwe: CWE-78
+    severity: critical
+    pattern_type: taint_sink
+    sinks:
+      - exec(args.command
+      - spawn(args.command
+      - execSync(args.command
+    suggestion: "Never execute shell commands from GraphQL args; use strict allowlists and argument arrays"
+
+  - id: registry/graphql/ssrf/fetch-resolver-url
+    title: "SSRF via GraphQL resolver fetching user-controlled URL"
+    cwe: CWE-918
+    severity: high
+    pattern_type: taint_sink
+    sinks:
+      - fetch(args.target
+      - axios.post(args.url
+      - got(args.url
+    suggestion: "Allow only trusted destinations and block link-local/private networks"
+
+  - id: registry/graphql/mutation/update-mass-assignment
+    title: "Mass Assignment via GraphQL update mutation using input object"
+    cwe: CWE-915
+    severity: high
+    pattern_type: regex
+    regex: "prisma\\.user\\.update\\(\\{\\s*data:\\s*args\\.input|User\\.updateOne\\(\\{\\s*_id:\\s*args\\.id\\s*\\},\\s*args\\.input"
+    suggestion: "Map explicit allowed fields from args.input instead of passing whole objects"
+
+  - id: registry/graphql/upload/max-size-infinite
+    title: "GraphQL upload middleware allows unlimited file size"
+    cwe: CWE-400
+    severity: high
+    pattern_type: regex
+    regex: "graphqlUploadExpress\\(\\{[^}]*maxFileSize\\s*:\\s*Infinity"
+    suggestion: "Set strict maxFileSize and maxFiles limits in upload middleware"
+
+  - id: registry/graphql/errors/stack-leak
+    title: "GraphQL error formatter returns raw stack traces"
+    cwe: CWE-209
+    severity: high
+    pattern_type: regex
+    regex: "formatError\\s*:\\s*\\(.*\\)\\s*=>\\s*err"
+    suggestion: "Return sanitized errors in production; avoid exposing raw error objects"

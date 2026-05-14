@@ -100,3 +100,25 @@ rules:
     sinks:
       - include: [{ model:.*where: { id: req.
     suggestion: "Use Op.eq and typed values; never pass raw user strings in include.where"
+
+  - id: registry/sequelize/second-order/literal-stored
+    title: "Second-Order SQL Injection via sequelize.literal() with stored value"
+    cwe: CWE-89
+    severity: critical
+    pattern_type: taint_sink
+    sinks:
+      - sequelize.literal(stored
+      - Sequelize.literal(stored
+      - sequelize.literal(saved
+    suggestion: "Treat stored data as untrusted; use Sequelize operators and value bindings, not literal()"
+
+  - id: registry/sequelize/second-order/query-stored
+    title: "Second-Order SQL Injection via sequelize.query() with stored SQL string"
+    cwe: CWE-89
+    severity: critical
+    pattern_type: taint_sink
+    sinks:
+      - sequelize.query(stored
+      - sequelize.query(sql_
+      - sequelize.query(raw_
+    suggestion: "Parameterize all dynamic values in sequelize.query() even when values originated from the database"

@@ -1,0 +1,177 @@
+language: python
+framework: cloud_security
+version: "1.0"
+description: "Cloud and API security rules — AWS/GCP/Azure misconfiguration, credential exposure (CWE-798, CWE-284, CWE-732)"
+rules:
+  - id: registry/python/cloud/aws-key-hardcoded
+    title: "Hardcoded AWS Access Key in source"
+    cwe: CWE-798
+    severity: critical
+    pattern_type: taint_sink
+    sinks:
+      - "AWS_ACCESS_KEY_ID = \"AKIA"
+      - "aws_access_key_id=\"AKIA"
+      - "aws_access_key_id='AKIA"
+      - "AccessKeyId: 'AKIA"
+      - "AccessKeyId: \"AKIA"
+    suggestion: "Never hardcode AWS credentials; use IAM roles, instance profiles, or AWS Secrets Manager"
+
+  - id: registry/python/cloud/aws-secret-hardcoded
+    title: "Hardcoded AWS Secret Access Key in source"
+    cwe: CWE-798
+    severity: critical
+    pattern_type: taint_sink
+    sinks:
+      - "AWS_SECRET_ACCESS_KEY = \""
+      - "aws_secret_access_key=\""
+      - "aws_secret_access_key='"
+      - "SecretAccessKey: '"
+      - "SecretAccessKey: \""
+    suggestion: "Store AWS secrets in environment variables or AWS Secrets Manager; never hardcode them"
+
+  - id: registry/python/cloud/s3-public-acl
+    title: "S3 bucket or object set to public-read ACL"
+    cwe: CWE-732
+    severity: high
+    pattern_type: taint_sink
+    sinks:
+      - "ACL='public-read'"
+      - "ACL=\"public-read\""
+      - "ACL='public-read-write'"
+      - "ACL=\"public-read-write\""
+    suggestion: "Use private ACLs and bucket policies; expose content via pre-signed URLs instead"
+
+  - id: registry/python/cloud/s3-bucket-public
+    title: "S3 bucket created with BlockPublicAcls disabled"
+    cwe: CWE-732
+    severity: high
+    pattern_type: taint_sink
+    sinks:
+      - "BlockPublicAcls=False"
+      - "BlockPublicPolicy=False"
+      - "IgnorePublicAcls=False"
+      - "RestrictPublicBuckets=False"
+    suggestion: "Enable all S3 Block Public Access settings by default; only relax for intentionally public buckets"
+
+  - id: registry/python/cloud/iam-wildcard-action
+    title: "IAM policy with wildcard Action (*) grants"
+    cwe: CWE-284
+    severity: high
+    pattern_type: taint_sink
+    sinks:
+      - "\"Action\": \"*\""
+      - "'Action': '*'"
+      - "\"Action\": [\"*\"]"
+      - "'Action': ['*']"
+    suggestion: "Follow least-privilege principle; enumerate specific IAM actions instead of using wildcards"
+
+  - id: registry/python/cloud/iam-wildcard-resource
+    title: "IAM policy with wildcard Resource (*)"
+    cwe: CWE-284
+    severity: high
+    pattern_type: taint_sink
+    sinks:
+      - "\"Resource\": \"*\""
+      - "'Resource': '*'"
+      - "\"Resource\": [\"*\"]"
+      - "'Resource': ['*']"
+    suggestion: "Scope IAM resources to specific ARNs; avoid '*' except where absolutely necessary"
+
+  - id: registry/python/cloud/boto3-no-ssl
+    title: "Boto3 client created with SSL verification disabled"
+    cwe: CWE-295
+    severity: high
+    pattern_type: taint_sink
+    sinks:
+      - "verify=False"
+      - "use_ssl=False"
+    suggestion: "Never disable SSL verification for AWS API calls; all AWS SDK connections must use TLS"
+
+  - id: registry/python/cloud/gcp-key-hardcoded
+    title: "Hardcoded GCP service account key file path or credentials"
+    cwe: CWE-798
+    severity: critical
+    pattern_type: taint_sink
+    sinks:
+      - "service_account.Credentials.from_service_account_file("
+      - "service_account_file=\""
+      - "credentials_file=\""
+    suggestion: "Use Workload Identity Federation or Application Default Credentials; never check in service account key files"
+
+  - id: registry/python/cloud/azure-connection-string-hardcoded
+    title: "Hardcoded Azure Storage or Service Bus connection string"
+    cwe: CWE-798
+    severity: critical
+    pattern_type: taint_sink
+    sinks:
+      - "DefaultEndpointsProtocol=https;AccountName="
+      - "connection_str=\"DefaultEndpoints"
+      - "conn_str=\"DefaultEndpoints"
+    suggestion: "Use managed identity or store connection strings in Azure Key Vault / environment variables"
+
+  - id: registry/python/cloud/sns-sqs-user-controlled
+    title: "SSRF via user-controlled SNS topic ARN or SQS queue URL"
+    cwe: CWE-918
+    severity: high
+    pattern_type: taint_sink
+    sinks:
+      - sns.publish(TopicArn=request.
+      - sqs.send_message(QueueUrl=request.
+      - sns_client.publish(TopicArn=
+    suggestion: "Validate topic ARNs and queue URLs against an allowlist; never accept them directly from users"
+
+  - id: registry/python/cloud/lambda-invoke-user-input
+    title: "SSRF/Injection via user-controlled Lambda function name in invoke"
+    cwe: CWE-918
+    severity: high
+    pattern_type: taint_sink
+    sinks:
+      - lambda_client.invoke(FunctionName=request.
+      - lambda_client.invoke(FunctionName=f"
+      - boto3.client('lambda').invoke(
+    suggestion: "Validate or map Lambda function names from a trusted allowlist; never accept names from user input"
+
+  - id: registry/python/cloud/dynamodb-no-pagination
+    title: "DynamoDB scan without filter — full table exposure"
+    cwe: CWE-770
+    severity: medium
+    pattern_type: taint_sink
+    sinks:
+      - table.scan()
+      - dynamodb.scan(TableName=
+    suggestion: "Use Query with key conditions instead of Scan; if Scan is needed, add FilterExpression and pagination"
+
+  - id: registry/python/cloud/secrets-manager-log
+    title: "Cloud secret value logged or printed to stdout"
+    cwe: CWE-532
+    severity: high
+    pattern_type: taint_sink
+    sinks:
+      - "print(secret"
+      - "logging.info(secret"
+      - "logger.info(secret"
+      - "print(api_key"
+      - "print(token"
+    suggestion: "Never log secret values; log only the secret name/ID or a masked representation"
+
+  - id: registry/python/cloud/ec2-security-group-all-traffic
+    title: "EC2 Security Group allows all inbound traffic (0.0.0.0/0 on all ports)"
+    cwe: CWE-284
+    severity: high
+    pattern_type: taint_sink
+    sinks:
+      - "CidrIp='0.0.0.0/0'"
+      - "CidrIp=\"0.0.0.0/0\""
+      - "CidrIpv6='::/0'"
+      - "FromPort=0, ToPort=65535"
+    suggestion: "Restrict security group ingress to specific IP ranges and ports required for your application"
+
+  - id: registry/python/cloud/rds-publicly-accessible
+    title: "RDS instance created with PubliclyAccessible=True"
+    cwe: CWE-284
+    severity: high
+    pattern_type: taint_sink
+    sinks:
+      - "PubliclyAccessible=True"
+      - "publicly_accessible=True"
+    suggestion: "Keep RDS instances in private subnets; use VPC peering or bastion hosts for access"

@@ -139,3 +139,51 @@ rules:
       - logging.info(self.request.body
       - logging.debug(self.request.body
     suggestion: "Avoid logging full request bodies; mask sensitive fields"
+
+  - id: registry/tornado/auth/check-xsrf-cookie-disabled
+    title: "XSRF checks explicitly disabled in Tornado handler"
+    cwe: CWE-352
+    severity: high
+    pattern_type: regex
+    regex: "check_xsrf_cookie\\s*=\\s*False"
+    suggestion: "Keep XSRF checks enabled and enforce tokens for state-changing requests"
+
+  - id: registry/tornado/header/injection-set-header
+    title: "Header injection via set_header with user-controlled value"
+    cwe: CWE-113
+    severity: high
+    pattern_type: taint_sink
+    sinks:
+      - self.set_header('X-
+      - self.set_header("X-
+      - self.add_header('X-
+    suggestion: "Reject CR/LF in header values and sanitize untrusted inputs before header assignment"
+
+  - id: registry/tornado/template/render-string-user
+    title: "SSTI via render_string with user-controlled template input"
+    cwe: CWE-94
+    severity: critical
+    pattern_type: taint_sink
+    sinks:
+      - self.render_string(self.get_argument(
+      - self.render_string(user_
+    suggestion: "Render static templates only; never pass user data as template source"
+
+  - id: registry/tornado/session/secure-cookie-false
+    title: "Secure cookie configured without Secure flag"
+    cwe: CWE-614
+    severity: high
+    pattern_type: regex
+    regex: "set_secure_cookie\\([^\\n]*secure\\s*=\\s*False"
+    suggestion: "Set secure=True for authentication/session cookies and enforce HTTPS"
+
+  - id: registry/tornado/path/os-remove-user
+    title: "Path Traversal or arbitrary file deletion via os.remove in handler"
+    cwe: CWE-22
+    severity: high
+    pattern_type: taint_sink
+    sinks:
+      - os.remove(self.get_argument(
+      - os.unlink(self.get_argument(
+      - os.remove(user_
+    suggestion: "Validate and constrain paths to a fixed base directory before deletion"

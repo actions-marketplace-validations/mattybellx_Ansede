@@ -162,3 +162,127 @@ rules:
       - res.render(req.body.template
       - nunjucks.renderString(req.
     suggestion: "Use static template names; never render user-controlled template strings"
+
+  - id: registry/express/ejs/renderfile-user-template
+    title: "SSTI via EJS renderFile() with user-controlled template name"
+    cwe: CWE-94
+    severity: critical
+    pattern_type: taint_sink
+    sinks:
+      - ejs.renderFile(req.query.
+      - ejs.renderFile(req.body.
+      - renderFile(req.params.
+      - ejs.renderFile(templateName
+      - renderFile(templateName
+    suggestion: "Only render static EJS template files; user input should never choose the template path"
+
+  - id: registry/express/ejs/compile-user-template
+    title: "SSTI via EJS compile() with user-controlled template string"
+    cwe: CWE-94
+    severity: critical
+    pattern_type: taint_sink
+    sinks:
+      - ejs.compile(req.
+      - ejs.compile(body.
+      - ejs.compile(template
+    suggestion: "Never compile EJS templates from user-controlled strings; keep templates static and trusted"
+
+  - id: registry/express/nunjucks/renderstring-user-template
+    title: "SSTI via Nunjucks renderString() with user-controlled template string"
+    cwe: CWE-94
+    severity: critical
+    pattern_type: taint_sink
+    sinks:
+      - nunjucks.renderString(req.
+      - res.renderString(req.
+      - renderString(template
+    suggestion: "Keep Nunjucks templates static; never pass user-controlled strings to renderString()"
+
+  - id: registry/express/nunjucks/compile-user-template
+    title: "SSTI via Nunjucks compile() with user-controlled template string"
+    cwe: CWE-94
+    severity: critical
+    pattern_type: taint_sink
+    sinks:
+      - nunjucks.compile(req.
+      - nunjucks.compile(body.
+      - nunjucks.compile(template
+    suggestion: "Do not compile Nunjucks templates from user input; compile only trusted static templates"
+
+  - id: registry/express/handlebars/compile-user-template
+    title: "SSTI via Handlebars.compile() with user-controlled template string"
+    cwe: CWE-94
+    severity: critical
+    pattern_type: taint_sink
+    sinks:
+      - Handlebars.compile(req.
+      - Handlebars.compile(body.
+      - hbs.compile(req.
+      - handlebars.compile(req.
+    suggestion: "Never compile user-supplied strings as Handlebars templates; templates must be static server-side files"
+
+  - id: registry/express/handlebars/safestring-user
+    title: "XSS via Handlebars SafeString wrapping of user input"
+    cwe: CWE-79
+    severity: critical
+    pattern_type: taint_sink
+    sinks:
+      - "new Handlebars.SafeString(req."
+      - "new Handlebars.SafeString(body."
+      - "Handlebars.SafeString(user"
+    suggestion: "Handlebars.SafeString marks content as trusted HTML; never wrap user input in it"
+
+  - id: registry/express/handlebars/partial-user-name
+    title: "SSTI via user-controlled Handlebars partial name"
+    cwe: CWE-94
+    severity: high
+    pattern_type: taint_sink
+    sinks:
+      - "Handlebars.registerPartial(req."
+      - "Handlebars.registerHelper(req."
+      - "partials[req."
+    suggestion: "Partial and helper names must be statically defined; never allow user input to select template partials"
+
+  - id: registry/express/handlebars/precompile-user
+    title: "SSTI via Handlebars.precompile() with user string"
+    cwe: CWE-94
+    severity: critical
+    pattern_type: taint_sink
+    sinks:
+      - Handlebars.precompile(req.
+      - Handlebars.precompile(template_str
+    suggestion: "Precompile templates at build time from static sources; never precompile user-supplied strings"
+
+  - id: registry/express/sqli/second-order-stored
+    title: "Second-Order SQL Injection via stored value reaching raw query"
+    cwe: CWE-89
+    severity: critical
+    pattern_type: taint_sink
+    sinks:
+      - "db.query(`SELECT * FROM"
+      - "connection.query(`SELECT"
+      - "pool.query(`SELECT"
+    suggestion: "Parameterize all SQL queries even when the value came from your own database; stored data may be attacker-controlled"
+
+  - id: registry/express/prototype-pollution/merge-deep
+    title: "Prototype Pollution via recursive merge with user-supplied object"
+    cwe: CWE-1321
+    severity: high
+    pattern_type: taint_sink
+    sinks:
+      - "merge(target, req.body"
+      - "merge(obj, req.body"
+      - "deepMerge(config, req.body"
+      - "Object.assign({}, req.body"
+    suggestion: "Use a safe merge library that blocks __proto__ / constructor / prototype keys, or use JSON.parse(JSON.stringify()) to sanitize first"
+
+  - id: registry/express/dos/regex-user
+    title: "ReDoS — user-supplied input used as a RegExp pattern"
+    cwe: CWE-1333
+    severity: high
+    pattern_type: taint_sink
+    sinks:
+      - "new RegExp(req.query"
+      - "new RegExp(req.body"
+      - "new RegExp(params."
+    suggestion: "Never compile user data as regex patterns; use string matching or pre-compile validated patterns"

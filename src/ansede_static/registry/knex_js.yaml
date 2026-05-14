@@ -100,3 +100,25 @@ rules:
       - .where(col, req.body.operator
       - .where(col, req.query.op
     suggestion: "Validate operators against allowlist ['=', '>', '<', '>=', '<=']"
+
+  - id: registry/knex/second-order/raw-stored
+    title: "Second-Order SQL Injection via knex.raw() with stored string"
+    cwe: CWE-89
+    severity: critical
+    pattern_type: taint_sink
+    sinks:
+      - knex.raw(stored
+      - db.raw(stored
+      - knex.raw(sql_
+    suggestion: "Even stored values should use binding parameters: knex.raw('? = ?', [col, val])"
+
+  - id: registry/knex/second-order/orderby-stored
+    title: "Second-Order SQL Injection via stored column name in .orderBy()"
+    cwe: CWE-89
+    severity: high
+    pattern_type: taint_sink
+    sinks:
+      - .orderBy(stored
+      - .orderByRaw(stored
+      - .orderBy(sort_
+    suggestion: "Validate stored sort column names against a declared table schema allowlist"

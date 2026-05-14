@@ -175,3 +175,48 @@ rules:
     pattern_type: regex
     regex: "time_cost\\s*=\\s*[12](?:[^0-9]|$)"
     suggestion: "Use time_cost>=3, memory_cost>=65536 for Argon2"
+
+  - id: registry/crypto/hash/user-controlled-algorithm
+    title: "User-controlled hash algorithm selection"
+    cwe: CWE-327
+    severity: high
+    pattern_type: taint_sink
+    sinks:
+      - hashlib.new(algorithm
+      - hashlib.new(user_
+      - hashlib.new(request.
+    suggestion: "Restrict allowed hash algorithms to a hardcoded allowlist; never accept algorithm names from user input"
+
+  - id: registry/crypto/hmac/weak-md5
+    title: "HMAC using weak MD5 digest algorithm"
+    cwe: CWE-327
+    severity: high
+    pattern_type: taint_sink
+    sinks:
+      - "hmac.new(key, digestmod=hashlib.md5"
+      - "hmac.new(key, msg, hashlib.md5"
+      - "HMAC(key, hashes.MD5())"
+    suggestion: "Use HMAC with SHA-256 or better: hmac.new(key, msg, hashlib.sha256)"
+
+  - id: registry/crypto/symmetric/blowfish
+    title: "Blowfish cipher usage (weak by modern standards)"
+    cwe: CWE-327
+    severity: high
+    pattern_type: taint_sink
+    sinks:
+      - algorithms.Blowfish(
+      - Blowfish.new(
+      - Cipher(algorithms.Blowfish(
+    suggestion: "Use AES-256-GCM instead of Blowfish"
+
+  - id: registry/crypto/symmetric/rc4
+    title: "RC4/ARC4 stream cipher usage (cryptographically broken)"
+    cwe: CWE-327
+    severity: critical
+    pattern_type: taint_sink
+    sinks:
+      - ARC4.new(
+      - algorithms.ARC4(
+      - Cipher(algorithms.ARC4(
+      - RC4.new(
+    suggestion: "RC4 is cryptographically broken; use AES-256-GCM"

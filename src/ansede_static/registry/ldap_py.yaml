@@ -1,0 +1,132 @@
+language: python
+framework: ldap_py
+version: "1.0"
+description: "LDAP injection rules for Python ldap / ldap3 libraries (CWE-90)"
+rules:
+  - id: registry/python/ldap/filter-concat
+    title: "LDAP Injection via user-controlled search filter (ldap)"
+    cwe: CWE-90
+    severity: critical
+    pattern_type: taint_sink
+    sinks:
+      - ldap.search_s(
+      - ldap.search_ext(
+      - ldap.search_ext_s(
+      - ldap.search(
+      - conn.search_s(
+    suggestion: "Escape all user input with ldap.filter.escape_filter_chars() before interpolating into LDAP filters"
+
+  - id: registry/python/ldap/filter-fstring
+    title: "LDAP Injection via f-string filter construction"
+    cwe: CWE-90
+    severity: critical
+    pattern_type: taint_sink
+    sinks:
+      - "filterstr=f\""
+      - "filterstr=f'"
+      - "filter=f\""
+      - "filter=f'"
+      - "(uid=\" + "
+      - "(uid=' + "
+      - "(&(uid="
+    suggestion: "Build LDAP filters using ldap.filter.filter_format('(uid=%s)', [user_input])"
+
+  - id: registry/python/ldap/dn-concat
+    title: "LDAP Injection via user-controlled Distinguished Name (DN)"
+    cwe: CWE-90
+    severity: critical
+    pattern_type: taint_sink
+    sinks:
+      - "bind_dn = \"cn=\" +"
+      - "bind_dn = 'cn=' +"
+      - "base_dn=f\""
+      - "base_dn=f'"
+      - "ldap.simple_bind_s("
+      - "conn.simple_bind_s("
+    suggestion: "Validate DN components against an allowlist; never concatenate user data into DN strings"
+
+  - id: registry/python/ldap/ldap3-search-filter
+    title: "LDAP Injection via ldap3 Connection.search with user-controlled filter"
+    cwe: CWE-90
+    severity: critical
+    pattern_type: taint_sink
+    sinks:
+      - conn.search(search_filter=
+      - server_conn.search(search_filter=
+      - connection.search(search_filter=
+      - .search(search_filter=f"
+      - .search(search_filter=f'
+    suggestion: "Use ldap3's escape_attribute_value() or escape_filter_chars() on user input"
+
+  - id: registry/python/ldap/ldap3-bind-user
+    title: "LDAP Injection via user-controlled ldap3 bind user DN"
+    cwe: CWE-90
+    severity: critical
+    pattern_type: taint_sink
+    sinks:
+      - Connection(server, user=request.
+      - Connection(server, user=f"
+      - Connection(server, user=f'
+      - ldap3.Connection(
+    suggestion: "Validate the bind user DN; never construct it from raw request data"
+
+  - id: registry/python/ldap/raw-filter-fragment
+    title: "LDAP Injection via raw filter fragment assembly"
+    cwe: CWE-90
+    severity: high
+    pattern_type: taint_sink
+    sinks:
+      - "\"(|(\""
+      - "\"(&(\""
+      - "\"(!(\"" 
+      - "search_filter = \"(\" +"
+      - "search_filter = '(' +"
+      - "ldap_filter += "
+    suggestion: "Never assemble LDAP filter strings by string concatenation; use parameterized filter APIs"
+
+  - id: registry/python/ldap/modify-dn-user
+    title: "LDAP Injection via modifyDN with user-controlled RDN"
+    cwe: CWE-90
+    severity: high
+    pattern_type: taint_sink
+    sinks:
+      - ldap.rename_s(
+      - conn.modify_dn(
+      - connection.modify_dn(
+    suggestion: "Validate new RDN values against a strict allowlist before passing to modifyDN"
+
+  - id: registry/python/ldap/add-entry-user
+    title: "LDAP Injection via add/modify with user-controlled attribute values"
+    cwe: CWE-90
+    severity: high
+    pattern_type: taint_sink
+    sinks:
+      - ldap.add_s(
+      - ldap.modify_s(
+      - conn.add(
+      - conn.modify(
+    suggestion: "Sanitize all attribute values; never pass raw user input as LDAP attribute values"
+
+  - id: registry/python/ldap/compare-user
+    title: "LDAP Injection via compare operation with user-controlled attribute/value"
+    cwe: CWE-90
+    severity: medium
+    pattern_type: taint_sink
+    sinks:
+      - ldap.compare_s(
+      - conn.compare(
+      - connection.compare(
+    suggestion: "Escape attribute values with escape_attribute_value() before LDAP compare operations"
+
+  - id: registry/python/ldap/url-user
+    title: "LDAP URL injection via user-controlled LDAP URL construction"
+    cwe: CWE-90
+    severity: high
+    pattern_type: taint_sink
+    sinks:
+      - "ldap://\" + "
+      - "ldaps://\" + "
+      - "ldap://\" +"
+      - "ldapurl = f\""
+      - "ldap_url = f\""
+    suggestion: "Never construct LDAP URLs from user input; use server/port/baseDN from config"

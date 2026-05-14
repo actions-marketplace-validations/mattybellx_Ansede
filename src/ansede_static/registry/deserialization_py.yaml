@@ -1,0 +1,102 @@
+language: python
+framework: deserialization_py
+version: "1.0"
+description: "Insecure deserialization rules for Python — beyond pickle (CWE-502, CWE-502)"
+rules:
+  - id: registry/python/deser/marshal-loads-user
+    title: "Insecure Deserialization via marshal.loads with user data"
+    cwe: CWE-502
+    severity: critical
+    pattern_type: taint_sink
+    sinks:
+      - marshal.loads(request.
+      - marshal.loads(data
+      - marshal.load(
+    suggestion: "marshal is not safe for untrusted data; use JSON or another safe serialization format"
+
+  - id: registry/python/deser/shelve-user-key
+    title: "Insecure Deserialization via shelve with user-controlled key"
+    cwe: CWE-502
+    severity: high
+    pattern_type: taint_sink
+    sinks:
+      - shelve.open(request.
+      - db[request.
+      - shelf[user_
+    suggestion: "Shelve files contain pickled objects; never use user-controlled keys or accept shelve files from users"
+
+  - id: registry/python/deser/jsonpickle-user
+    title: "Insecure Deserialization via jsonpickle.decode with user data"
+    cwe: CWE-502
+    severity: critical
+    pattern_type: taint_sink
+    sinks:
+      - jsonpickle.decode(request.
+      - jsonpickle.decode(data
+      - jsonpickle.loads(
+    suggestion: "jsonpickle can execute arbitrary code; never deserialize untrusted data with it"
+
+  - id: registry/python/deser/dill-loads-user
+    title: "Insecure Deserialization via dill.loads with user data"
+    cwe: CWE-502
+    severity: critical
+    pattern_type: taint_sink
+    sinks:
+      - dill.loads(request.
+      - dill.loads(data
+      - dill.load(
+    suggestion: "dill (extended pickle) is not safe for untrusted data; use safe serialization formats"
+
+  - id: registry/python/deser/joblib-user
+    title: "Insecure Deserialization via joblib.load with user-supplied file"
+    cwe: CWE-502
+    severity: critical
+    pattern_type: taint_sink
+    sinks:
+      - joblib.load(request.
+      - joblib.load(user_
+      - joblib.load(f"
+    suggestion: "Never load joblib files from user-supplied paths; joblib uses pickle internally"
+
+  - id: registry/python/deser/numpy-load-allow-pickle
+    title: "Insecure Deserialization via numpy.load with allow_pickle=True on user data"
+    cwe: CWE-502
+    severity: critical
+    pattern_type: taint_sink
+    sinks:
+      - "numpy.load(request."
+      - "np.load(request."
+      - "allow_pickle=True"
+    suggestion: "Disable allow_pickle=True unless the file is from a trusted internal source; use np.load with pickle disabled"
+
+  - id: registry/python/deser/msgpack-raw-user
+    title: "Insecure Deserialization via msgpack.unpackb with raw=False on user data"
+    cwe: CWE-502
+    severity: high
+    pattern_type: taint_sink
+    sinks:
+      - msgpack.unpackb(request.
+      - msgpack.unpackb(data
+    suggestion: "msgpack with object_hook can invoke arbitrary callables; validate the schema strictly after unpacking"
+
+  - id: registry/python/deser/pyyaml-load-user
+    title: "Insecure Deserialization via PyYAML yaml.load with Loader=None on user data"
+    cwe: CWE-502
+    severity: critical
+    pattern_type: taint_sink
+    sinks:
+      - "yaml.load(request."
+      - "yaml.load(data"
+      - "yaml.load(f.read"
+    suggestion: "Always use yaml.safe_load() for untrusted data; yaml.load() with full Loader can execute arbitrary Python"
+
+  - id: registry/python/deser/torch-load-user
+    title: "Insecure Deserialization via PyTorch torch.load with user-supplied model file"
+    cwe: CWE-502
+    severity: critical
+    pattern_type: taint_sink
+    sinks:
+      - torch.load(request.
+      - torch.load(user_
+      - torch.load(f"
+    suggestion: "torch.load uses pickle; only load model files from trusted internal sources, never from user uploads"

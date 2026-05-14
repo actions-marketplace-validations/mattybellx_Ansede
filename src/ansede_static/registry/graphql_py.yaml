@@ -1,0 +1,220 @@
+language: python
+framework: graphql_py
+version: "1.0"
+description: "GraphQL security rules for Python graphene / strawberry / ariadne (CWE-943, CWE-770, CWE-400)"
+rules:
+  - id: registry/python/graphql/nosql-injection
+    title: "GraphQL NoSQL Injection — user-controlled filter reaching MongoDB/database"
+    cwe: CWE-943
+    severity: critical
+    pattern_type: taint_sink
+    sinks:
+      - collection.find(info.context.
+      - collection.find_one(info.context.
+      - db.find(info.
+      - Document.objects.filter(**
+    suggestion: "Never pass raw GraphQL argument dicts to database queries; use explicit field extraction and validation"
+
+  - id: registry/python/graphql/depth-unlimited
+    title: "GraphQL query depth limit not enforced — DoS via deeply nested queries"
+    cwe: CWE-770
+    severity: high
+    pattern_type: taint_sink
+    sinks:
+      - graphene.Schema(query=
+      - strawberry.Schema(query=
+      - make_executable_schema(
+    suggestion: "Add graphql-core depth limiting middleware or use graphene-validation with DepthLimitValidator"
+
+  - id: registry/python/graphql/introspection-enabled
+    title: "GraphQL introspection enabled in production"
+    cwe: CWE-200
+    severity: medium
+    pattern_type: taint_sink
+    sinks:
+      - "introspection=True"
+      - "allow_introspection=True"
+    suggestion: "Disable introspection in production: graphene.Schema(..., introspection=False)"
+
+  - id: registry/python/graphql/sql-injection
+    title: "GraphQL SQL Injection — argument reaching raw SQL execution"
+    cwe: CWE-89
+    severity: critical
+    pattern_type: taint_sink
+    sinks:
+      - "cursor.execute(f\""
+      - "cursor.execute(\"SELECT"
+      - "db.session.execute(text(f\""
+    suggestion: "Use parameterized queries; never interpolate GraphQL arguments directly into SQL"
+
+  - id: registry/python/graphql/ssrf-url-arg
+    title: "GraphQL SSRF — user-supplied URL argument reaching HTTP request"
+    cwe: CWE-918
+    severity: critical
+    pattern_type: taint_sink
+    sinks:
+      - requests.get(info.
+      - requests.post(info.
+      - httpx.get(info.
+      - aiohttp.ClientSession().get(info.
+    suggestion: "Validate URL arguments against an allowlist of trusted domains before making server-side requests"
+
+  - id: registry/python/graphql/path-traversal-arg
+    title: "GraphQL path traversal — file argument used in filesystem operation"
+    cwe: CWE-22
+    severity: critical
+    pattern_type: taint_sink
+    sinks:
+      - open(info.context
+      - Path(info.context
+      - os.path.join(root, info.
+    suggestion: "Resolve and validate file paths against a trusted root directory; reject paths containing '..'"
+
+  - id: registry/python/graphql/batching-attack
+    title: "GraphQL batching attack — array of operations not rate-limited"
+    cwe: CWE-400
+    severity: medium
+    pattern_type: taint_sink
+    sinks:
+      - "isinstance(data, list)"
+      - "for query in data"
+      - "for operation in data"
+    suggestion: "Enforce per-request operation limits and complexity scoring to prevent batching abuse"
+
+  - id: registry/python/graphql/mutation-no-auth
+    title: "GraphQL mutation without authentication check"
+    cwe: CWE-306
+    severity: high
+    pattern_type: taint_sink
+    sinks:
+      - "class Mutation(graphene.ObjectType):"
+      - "class Mutation(graphene.Mutation):"
+    suggestion: "All mutations should check authentication/authorization via context.user or a permission decorator"
+
+  - id: registry/python/graphql/ariadne-resolver-injection
+    title: "GraphQL Ariadne resolver accepting raw user args without validation"
+    cwe: CWE-20
+    severity: high
+    pattern_type: taint_sink
+    sinks:
+      - "@query.field("
+      - "@mutation.field("
+    suggestion: "Validate all resolver arguments using Pydantic or marshmallow before processing"
+
+  - id: registry/python/graphql/subscription-no-auth
+    title: "GraphQL subscription without authentication"
+    cwe: CWE-306
+    severity: high
+    pattern_type: taint_sink
+    sinks:
+      - "class Subscription(graphene.ObjectType):"
+      - "@subscription.field("
+    suggestion: "Authenticate WebSocket connections before accepting GraphQL subscriptions"
+
+  - id: registry/python/graphql/command-injection-resolver
+    title: "GraphQL command injection — subprocess called with user resolver arg"
+    cwe: CWE-78
+    severity: critical
+    pattern_type: taint_sink
+    sinks:
+      - subprocess.run(info.
+      - subprocess.Popen(info.
+      - os.system(info.
+      - os.popen(info.
+    suggestion: "Never pass GraphQL arguments to system commands; use a safe abstraction layer"
+
+  - id: registry/python/graphql/debug-mode-production
+    title: "GraphQL schema debug mode enabled in production"
+    cwe: CWE-209
+    severity: medium
+    pattern_type: regex
+    regex: 'graphene\.Schema\(.*debug\s*=\s*True|strawberry\.Schema\(.*debug\s*=\s*True'
+    suggestion: "Disable debug=True in production GraphQL schemas to avoid traceback exposure"
+
+  - id: registry/python/graphql/open-redirect-resolver
+    title: "GraphQL open redirect — user arg used in redirect response"
+    cwe: CWE-601
+    severity: high
+    pattern_type: taint_sink
+    sinks:
+      - redirect(info.context
+      - redirect(kwargs.get(
+      - HTTPFound(location=info.
+      - return RedirectResponse(info.
+    suggestion: "Validate redirect URLs against a trusted domain allowlist"
+
+  - id: registry/python/graphql/xxe-xml-arg
+    title: "GraphQL XXE — user XML argument passed to XML parser without entity protection"
+    cwe: CWE-611
+    severity: critical
+    pattern_type: taint_sink
+    sinks:
+      - etree.fromstring(info.
+      - lxml.etree.fromstring(info.
+      - xml.etree.ElementTree.fromstring(info.
+    suggestion: "Use defusedxml; never parse user-supplied XML without disabling entity resolution"
+
+  - id: registry/python/graphql/log-sensitive-arg
+    title: "GraphQL resolver logging sensitive argument (password/token)"
+    cwe: CWE-532
+    severity: high
+    pattern_type: taint_sink
+    sinks:
+      - 'logger.info(info.context.get("password"'
+      - 'logger.debug(info.context.get("token"'
+      - print(info.context
+      - 'logging.info(kwargs.get("password"'
+    suggestion: "Mask sensitive fields before logging resolver arguments"
+
+  - id: registry/python/graphql/graphiql-enabled
+    title: "GraphQL GraphiQL enabled in production"
+    cwe: CWE-200
+    severity: medium
+    pattern_type: regex
+    regex: 'GraphQL\(.*graphiql\s*=\s*True|graphiql\s*=\s*True'
+    suggestion: "Disable GraphiQL in production environments"
+
+  - id: registry/python/graphql/mutation-mass-assignment
+    title: "GraphQL mutation mass assignment from user input"
+    cwe: CWE-915
+    severity: high
+    pattern_type: taint_sink
+    sinks:
+      - update(**info.context
+      - update(**kwargs
+      - update(data=info.
+      - create(**info.context
+    suggestion: "Use explicit allowlists for updatable model fields"
+
+  - id: registry/python/graphql/yaml-load-user-arg
+    title: "GraphQL unsafe YAML load from user argument"
+    cwe: CWE-502
+    severity: critical
+    pattern_type: taint_sink
+    sinks:
+      - yaml.load(info.
+      - yaml.load(kwargs.get(
+      - yaml.unsafe_load(info.
+    suggestion: "Use yaml.safe_load and validate schema for user-supplied YAML"
+
+  - id: registry/python/graphql/pickle-loads-user-arg
+    title: "GraphQL unsafe pickle.loads from user argument"
+    cwe: CWE-502
+    severity: critical
+    pattern_type: taint_sink
+    sinks:
+      - pickle.loads(info.
+      - pickle.loads(kwargs.get(
+      - pickle.loads(base64.b64decode(info.
+    suggestion: "Never deserialize untrusted pickle data in GraphQL resolvers"
+
+  - id: registry/python/graphql/exec-user-arg
+    title: "GraphQL code injection via exec with user argument"
+    cwe: CWE-94
+    severity: critical
+    pattern_type: taint_sink
+    sinks:
+      - exec(info.context
+      - exec(kwargs.get(
+      - eval(info.context
+    suggestion: "Never execute resolver-provided strings as code"

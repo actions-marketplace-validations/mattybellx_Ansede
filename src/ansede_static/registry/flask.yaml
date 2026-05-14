@@ -429,3 +429,76 @@ rules:
       - render_template_string(session[
       - Template(session[
     suggestion: "Never render template strings from session data; use static template files"
+
+  - id: registry/flask/headers/missing-csp
+    title: "Flask response missing Content-Security-Policy header"
+    cwe: CWE-693
+    severity: medium
+    pattern_type: regex
+    regex: "@app\\.route.*\\ndef \\w+.*:\\s*(?!.*Content-Security-Policy)"
+    suggestion: "Set CSP headers via Flask-Talisman or add: response.headers['Content-Security-Policy'] = \"default-src 'self'\""
+
+  - id: registry/flask/headers/missing-hsts
+    title: "Flask application without HTTPS Strict Transport Security"
+    cwe: CWE-319
+    severity: medium
+    pattern_type: regex
+    regex: "Flask\\(__name__\\)(?!.*Talisman|.*HTTPS|.*HSTS)"
+    suggestion: "Enable HSTS via Flask-Talisman: Talisman(app, force_https=True, strict_transport_security=True)"
+
+  - id: registry/flask/logging/sensitive-in-log
+    title: "Password or token logged via Flask/Python logging"
+    cwe: CWE-532
+    severity: high
+    pattern_type: taint_sink
+    sinks:
+      - "app.logger.info(.*password"
+      - "logging.info(.*token"
+      - "print(request.form['password'"
+      - "print(request.json['token'"
+    suggestion: "Never log credentials or tokens; use structured logging with field redaction for sensitive fields"
+
+  - id: registry/flask/auth/login-bypass-empty-password
+    title: "Authentication bypass — empty password check using falsy comparison"
+    cwe: CWE-287
+    severity: critical
+    pattern_type: taint_sink
+    sinks:
+      - "if not user.password"
+      - "if password is None"
+      - "if not password:"
+    suggestion: "Explicitly check password length > 0 and use constant-time comparison; empty passwords should fail"
+
+  - id: registry/flask/injection/eval-user-expression
+    title: "Arbitrary code execution via eval() of user-supplied expression"
+    cwe: CWE-95
+    severity: critical
+    pattern_type: taint_sink
+    sinks:
+      - "eval(request.args"
+      - "eval(request.form"
+      - "eval(request.json"
+      - "eval(request.data"
+    suggestion: "Never eval() user input; use a safe expression parser or predefined mapping instead"
+
+  - id: registry/flask/upload/unrestricted-file-type
+    title: "Unrestricted file upload without extension or MIME validation"
+    cwe: CWE-434
+    severity: high
+    pattern_type: taint_sink
+    sinks:
+      - "request.files['file'].save("
+      - "request.files.get('file').save("
+      - ".save(os.path.join("
+    suggestion: "Validate file extension against an allowlist and check MIME type before saving; store outside web root"
+
+  - id: registry/flask/upload/path-traversal-filename
+    title: "Path traversal via user-controlled upload filename"
+    cwe: CWE-22
+    severity: critical
+    pattern_type: taint_sink
+    sinks:
+      - "filename = request.files['file'].filename"
+      - "filename = file.filename"
+      - "os.path.join(UPLOAD_FOLDER, filename)"
+    suggestion: "Always use werkzeug.utils.secure_filename() and validate the path stays within UPLOAD_FOLDER"
