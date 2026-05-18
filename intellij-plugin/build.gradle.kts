@@ -30,7 +30,8 @@ intellijPlatform {
     pluginConfiguration {
         ideaVersion {
             sinceBuild = "241"
+            untilBuild = "261.*"
         }
-        changeNotes = "Initial scaffold for Ansede IntelliJ integration."
+        changeNotes = "Full ansede-static engine bridge — scan Python, JS, TS, Java, C#, Go files with Ctrl+Alt+S."
     }
 }
