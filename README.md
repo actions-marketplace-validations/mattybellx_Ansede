@@ -1,7 +1,7 @@
 ﻿<p align="center">
   <picture>
     <source media="(prefers-color-scheme: light)" srcset="https://raw.githubusercontent.com/mattybellx/Ansede/master/AS.png">
-    <source media="(prefers-color-scheme: dark)" srcset="https://raw.githubusercontent.com/mattybellx/Ansede/master/docs/banner-dark.svg">
+    <source media="(prefers-color-scheme: dark)" srcset="https://raw.githubusercontent.com/mattybellx/Ansede/master/AS.png">
     <img alt="Ansede Static — World's Best Offline SAST" src="https://raw.githubusercontent.com/mattybellx/Ansede/master/AS.png" width="800">
   </picture>
 </p>
