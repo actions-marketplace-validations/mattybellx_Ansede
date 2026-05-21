@@ -24,10 +24,12 @@ rules:
   - id: registry/react/postmessage/no-origin-check
     title: "postMessage handler without origin validation"
     cwe: CWE-346
-    severity: high
+    severity: low
     pattern_type: regex
     regex: "addEventListener\\(['\"]message['\"].*(?!event\\.origin)"
     suggestion: "Always check event.origin against a trusted allowlist in message handlers"
+    confidence: 0.3
+    path_exclude: "/(?:node_modules|dist|lib|vendor)/"
 
   - id: registry/react/eval/jsx-eval
     title: "Code Injection via eval in React component"

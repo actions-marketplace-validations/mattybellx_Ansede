@@ -80,7 +80,8 @@ rules:
     pattern_type: regex
     regex: "\.select\([^)]*\)(?!.*\.limit)"
     suggestion: "Add .limit() to all list queries: .select('*').limit(100)"
-    confidence: 0.35
+    confidence: 0.25
+    path_exclude: "/(?:node_modules|dist|lib)/"
 
   - id: registry/knex/sqli/tablename-user
     title: "SQL Injection via user-controlled table name in knex()"

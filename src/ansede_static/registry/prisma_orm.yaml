@@ -85,10 +85,12 @@ rules:
   - id: registry/prisma/dos/findmany-no-limit
     title: "Prisma findMany without pagination limit"
     cwe: CWE-400
-    severity: medium
+    severity: low
     pattern_type: regex
-    regex: "prisma\\.\\w+\\.findMany\\((?!.*take)"
+    regex: "prisma\.\\w+\.findMany\\((?!.*take)"
     suggestion: "Always set take: for pagination: prisma.model.findMany({ take: 100 })"
+    confidence: 0.3
+    path_exclude: "/(?:src\\/generated|prisma\\/generated|node_modules|dist|lib)/"
 
   - id: registry/prisma/second-order/queryrawunsafe-stored
     title: "Second-Order SQL Injection via prisma.$queryRawUnsafe() with stored string"

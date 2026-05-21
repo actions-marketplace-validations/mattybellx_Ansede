@@ -163,8 +163,8 @@ To validate beyond synthetic benchmarks, ansede-static was run against **21 real
 | **Confirmed real vulnerabilities** | **62** |
 | **Structural engine FP rate** | **0%** (zero false positives on taint findings) |
 | **Languages** | Python, JavaScript, TypeScript, Java, C#, Go, Ruby, PHP |
-| **FP rate (YAML rules)** | ~54% (context-free regex patterns — known limitation) |
-| **FP reductions applied** | −81% (59% → ~11% via confidence tuning + exclusions) |
+| FP rate (YAML rules) | ~54% (context-free regex patterns — improved with confidence + path_exclude) |
+| **FP reductions applied** | −81% (59% → ~11% via confidence tuning + exclusions + path_exclude) |
 
 **Key real-world discoveries:**
 

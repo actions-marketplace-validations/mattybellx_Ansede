@@ -49,10 +49,12 @@ rules:
   - id: registry/graphql/auth/resolver-no-auth
     title: "GraphQL resolver without authentication check"
     cwe: CWE-306
-    severity: high
+    severity: low
     pattern_type: regex
     regex: "resolve:\\s*(?:async\\s*)?\\([^)]*\\)\\s*=>"
     suggestion: "Check context.user or context.auth at the start of each resolver"
+    confidence: 0.3
+    path_exclude: "/(?:node_modules|dist|lib)/"
 
   - id: registry/graphql/mutation/mass-assignment
     title: "Mass Assignment via GraphQL mutation input spread"

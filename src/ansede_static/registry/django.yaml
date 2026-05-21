@@ -78,6 +78,7 @@ rules:
       - from_string(
     suggestion: "Never pass user-controlled data to Template(). Use template files only"
     confidence: 0.4
+    path_exclude: "/(?:node_modules|dist|lib/python|src\\/django|tests)/"
 
   - id: registry/django/ssti/render-template-string
     title: "Template Injection via render_to_string with unsafe context"
@@ -109,6 +110,7 @@ rules:
       - StreamingHttpResponse(FileWrapper(
     suggestion: "Validate and sanitize the file path; use os.path.abspath() with an allowlist check"
     confidence: 0.35
+    path_exclude: "/(?:node_modules|dist|lib/python|tests)/"
 
   - id: registry/django/file/serve-path
     title: "Path Traversal via django.views.static.serve"

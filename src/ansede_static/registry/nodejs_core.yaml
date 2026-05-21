@@ -143,24 +143,28 @@ rules:
   - id: registry/nodejs/ssrf/fetch-user-url
     title: "SSRF via native fetch() with user-controlled URL"
     cwe: CWE-918
-    severity: high
+    severity: medium
     pattern_type: taint_sink
     sinks:
       - fetch(url
       - fetch(req.query.
       - fetch(req.body.
     suggestion: "Validate and allowlist the URL before calling fetch(); block internal network ranges"
+    confidence: 0.45
+    path_exclude: "/(?:node_modules|dist|lib)/"
 
   - id: registry/nodejs/ssrf/net-connect-user
     title: "SSRF via net.connect() with user-controlled host"
     cwe: CWE-918
-    severity: high
+    severity: medium
     pattern_type: taint_sink
     sinks:
       - net.connect(port, host
       - net.createConnection(port, host
       - net.connect(req.query.
     suggestion: "Validate host against an allowlist; block RFC1918 and loopback addresses"
+    confidence: 0.4
+    path_exclude: "/(?:node_modules|dist|lib)/"
 
   - id: registry/nodejs/path/fs-createreadstream-user
     title: "Path Traversal via fs.createReadStream with user-controlled path"

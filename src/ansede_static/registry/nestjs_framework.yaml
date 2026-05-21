@@ -59,10 +59,12 @@ rules:
   - id: registry/nestjs/guard/controller-unprotected
     title: "NestJS controller without class-level guard"
     cwe: CWE-306
-    severity: medium
+    severity: low
     pattern_type: regex
     regex: "@Controller\\([^)]*\\)\\s*(?!.*@UseGuards)"
     suggestion: "Apply @UseGuards(JwtAuthGuard) at the controller class level"
+    confidence: 0.25
+    path_exclude: "/(?:node_modules|dist|lib|src\\/generated)/"
 
   - id: registry/nestjs/pipe/no-validation
     title: "NestJS endpoint receives body without ValidationPipe"
