@@ -166,20 +166,7 @@ To validate beyond synthetic benchmarks, ansede-static was run against **21 real
 | FP rate (YAML rules) | ~54% (context-free regex patterns — improved with confidence + path_exclude) |
 | **FP reductions applied** | −81% (59% → ~11% via confidence tuning + exclusions + path_exclude) |
 
-**Key real-world discoveries:**
 
-| Repo | Stars | Confirmed Vulns | Types Found |
-|------|-------|----------------|-------------|
-| **uptime-kuma** | ⭐ 60k | **16** 🔥 | Path traversal, SSRF, XSS, code injection |
-| **pocketbase** | ⭐ 42k | **11** 🔥 | SQLi, path traversal, SSRF, command injection |
-| **hoppscotch** | ⭐ 68k | **9** 🔥 | XSS, SQLi in OAuth, path traversal |
-| **dashy** | ⭐ 20k | **7** | Dynamic require, path traversal, SSRF |
-| **speedtest** | ⭐ 14k | **6** | Path traversal, open redirect, SSRF |
-| **stackedit** | ⭐ 22k | **2** | Open redirect, eval injection |
-| **docuseal** | — | **2** | XSS, SSRF |
-| **appwrite** | ⭐ 37k | **1** | Path traversal |
-| **linkding** | — | **1** | SQL injection |
-| NodeGoat, dvna | — | 7 | Validation targets |
 
 All confirmed findings were disclosed responsibly via GitHub Issues from `@mattybellx`.
 
