@@ -19,6 +19,8 @@ import re
 import json
 import sys
 import textwrap
+import time
+import threading
 from pathlib import Path
 from typing import Any
 
@@ -957,6 +959,10 @@ def build_parser() -> argparse.ArgumentParser:
         ),
     )
     parser.add_argument(
+        "--benchmark", action="store_true",
+        help="Print per-file scan timing table after scan completes.",
+    )
+    parser.add_argument(
         "--incremental-sha256", dest="incremental_sha256", action="store_true",
         help=(
             "Use SHA-256 file-content hashing to skip unchanged files "
@@ -1808,8 +1814,11 @@ def _main_impl() -> None:
                     pass
 
             # ── Helper for scanning one file (used in both serial and parallel) ──
+            _file_timings: list[dict] = []
+
             def _scan_one(fpath: Path) -> AnalysisResult:
-                return _analyze_file_with_timeout(
+                t0 = time.perf_counter()
+                result = _analyze_file_with_timeout(
                     fpath,
                     requested_js_backend=args.js_backend,
                     experimental_js_ast=args.experimental_js_ast,
@@ -1817,6 +1826,13 @@ def _main_impl() -> None:
                     global_graph=global_graph,
                     engine=getattr(args, "engine", "auto"),
                 )
+                elapsed = time.perf_counter() - t0
+                _file_timings.append({
+                    "file": str(fpath),
+                    "ms": round(elapsed * 1000, 1),
+                    "findings": len(result.findings),
+                })
+                return result
 
             use_parallel = getattr(args, "parallel", False) or getattr(args, "workers", None)
             worker_count: int | None = getattr(args, "workers", None)
@@ -1884,6 +1900,25 @@ def _main_impl() -> None:
                         except Exception:
                             pass
                 _inc_cache.close()
+
+            # ── Benchmark output (--benchmark flag) ──────────────────────────
+            if getattr(args, "benchmark", False) and _file_timings:
+                _file_timings.sort(key=lambda x: -x["ms"])
+                print(f"\n{'File':<50} {'Time (ms)':>10} {'Findings':>8}", file=sys.stderr)
+                print("-" * 70, file=sys.stderr)
+                for t in _file_timings[:30]:
+                    fname = Path(t["file"]).name[:48]
+                    print(f"{fname:<50} {t['ms']:>10.1f} {t['findings']:>8}", file=sys.stderr)
+                if len(_file_timings) > 30:
+                    print(f"... and {len(_file_timings) - 30} more files", file=sys.stderr)
+                total_ms = sum(t["ms"] for t in _file_timings)
+                n = len(_file_timings)
+                avg = total_ms / n if n else 0
+                files_per_sec = n / (total_ms / 1000) if total_ms else 0
+                print(f"\nTotal: {total_ms:.0f}ms  Files: {n}  "
+                      f"Avg: {avg:.0f}ms/file  "
+                      f"Files/s: {files_per_sec:.1f}",
+                      file=sys.stderr)
 
         elif not results:
             parser.print_help()
