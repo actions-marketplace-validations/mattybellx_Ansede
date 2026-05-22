@@ -10,6 +10,7 @@ from ansede_static.js_engine.constants import (
     SSRF_CALLEES,
     callee_matches,
 )
+from ansede_static.js_engine.project_context import ProjectContext, is_fs_callee
 from ansede_static.js_engine.project import (
     _trace_helper_return_expression,
     build_js_project_index,
@@ -96,6 +97,13 @@ def _check_taint_path_traversal(
         return []
     findings: list[Finding] = []
     for call in collect_calls(code):
+        short = call.callee.split(".")[-1]
+        # ── Ambiguous callee guard ──────────────────────────────
+        # `open` / `openSync` match XMLHttpRequest.open(), modals.open(),
+        # window.open(), etc. — none of which are filesystem operations.
+        if short in {"open", "openSync"}:
+            if not is_fs_callee(call.callee, code=code):
+                continue
         if not callee_matches(call.callee, PATH_CALLEE_PARTS):
             continue
         trace: tuple[TraceFrame, ...] = ()
@@ -437,7 +445,12 @@ def run_taint_flow_checks(
     filename: str = "",
     project=None,
     global_graph: object | None = None,
+    project_context: ProjectContext | None = None,
 ) -> list[Finding]:
+    # Gap 4: Skip taint flow checks entirely in browser-side code
+    if project_context and project_context.skip_node_rules:
+        return []
+
     active_project = project or (build_js_project_index(filename, code) if filename else None)
     taint_traces = extract_taint_traces(code)
     if active_project and filename:

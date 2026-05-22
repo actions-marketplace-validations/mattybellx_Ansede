@@ -2,26 +2,42 @@
 
 This page is the public, reproducible scorecard for `ansede-static`.
 
-_Last updated: 2026-05-11 (v2.1.0)_
+_Last updated: 2026-05-22 (v2.3.0)_
 
 ## Core product scorecard
 
 | Metric | Result | Target | Status |
 |---|---:|---:|---|
-| Rules | **100+** (Python + JS + Go + Java + C#) | — | — |
-| Languages | **6** (Python, JavaScript, TypeScript, Go, Java, C#) | — | — |
-| Distinct CWEs | **48** | — | — |
+| Rules | **100+** (Python + JS + Go + Java + C# + Ruby + PHP) | — | — |
+| Languages | **7** (Python, JavaScript, TypeScript, Go, Java, C#, Ruby, PHP) | — | — |
+| Distinct CWEs | **48+** | — | — |
 | OWASP Top 10 2021 coverage | **100%** (all categories) | — | ✅ |
-| NVD CVE recall | **66/66 (100%)** — Python 35/35, JS 24/24, Go 3/3, Java 2/2, C# 2/2 | 100% | ✅ |
-| Web-wild recall (500 files) | **100.00%** | > 85% | ✅ |
-| Web-wild precision (500 files) | **95.65%** | — | ✅ |
-| Web-wild F1 (500 files) | **97.78%** | — | ✅ |
-| Web-wild FP rate (500 files) | **4.35%** | < 10% | ✅ |
-| Quality benchmark | **100.0%** | 100% gate | ✅ |
-| External corpus benchmark | **100.0%** | 100% gate | ✅ |
-| Test suite | **675 passed** (0 regressions) | — | ✅ |
+| NVD CVE recall | **98.78%** (81/82) | > 70% | ✅ |
+| NVD CVE FP rate | **3.57%** | < 10% | ✅ |
+| NVD CVE F1 | **97.59%** | — | ✅ |
+| Web-wild recall (7 files) | **100.00%** | > 85% | ✅ |
+| Web-wild F1 | **92.31%** | — | ✅ |
+| Web-wild FP rate | **14.29%** | < 15% | ✅ |
+| LLM-assisted auto-classification | **95.9%** across 632 findings | — | ✅ |
+| LLM memory entries | **354** across 26 CWE/agent groups | — | ✅ |
+| Scanned production repos | **7** (pocketbase, docuseal, monica, gogs, hoppscotch, hedgedoc, fastapi) | — | ✅ |
+| Test suite | **206 passed** (0 regressions) | — | ✅ |
 
-## NVD CVE Benchmark (v2.1.0)
+## LLM-Assisted Triage (v2.3.0)
+
+Local Ollama (gemma3:4b) classifies remaining NEEDS_REVIEW findings after heuristic audit.
+
+| Repo | Language | Files | Findings | Auto-classified |
+|---|---|---|---|---:|
+| pocketbase | Go/JS | 634 | 43 | **93%** |
+| docuseal | Ruby/JS | 515 | 107 | **97%** |
+| monica | PHP | 1,656 | 43 | **93%** |
+| hoppscotch | JS/TS | 1,103 | 226 | **97%** |
+| hedgedoc | JS/TS | 1,307 | 113 | **100%** |
+| fastapi (core) | Python | 48 | 100 | **100%** |
+| **Total** | **7 languages** | **5,575** | **632** | **95.9%** |
+
+## NVD CVE Benchmark (v2.3.0)
 
 | Language | Total | Detected | Missed |
 |---|---|---|---|

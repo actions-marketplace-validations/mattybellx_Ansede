@@ -36,6 +36,12 @@ from ansede_static.js_engine.source_map_resolver import (
 from ansede_static.js_engine.sourcemap_rescanner import rescore_via_source_map
 
 from ansede_static.js_engine.project import build_js_project_index, propagate_helper_return_traces
+from ansede_static.js_engine.project_context import (
+    ProjectContext,
+    Runtime,
+    classify_runtime,
+    is_fs_callee,
+)
 from ansede_static.js_engine.react import run_react_checks
 from ansede_static.js_engine.routes import run_route_checks
 from ansede_static.js_engine.taint_checks import run_taint_flow_checks
@@ -54,6 +60,11 @@ _SHELL_TRUE_RE = re.compile(r'\bshell\s*:\s*true\b', re.IGNORECASE)
 _SIMPLE_IDENTIFIER_RE = re.compile(r'^\s*[A-Za-z_$][\w$]*(?:\.[A-Za-z_$][\w$]*)*\s*$')
 _VENDOR_JS_PATH_RE = re.compile(r'(?:^|[/\\])(?:vendor|vendors|node_modules|third_party|third-party|bower_components)(?:[/\\]|$)', re.IGNORECASE)
 _MINIFIED_JS_PATH_RE = re.compile(r'(?:\.min\.(?:js|css)$|(?:bundle|chunk)\.js$)', re.IGNORECASE)
+# Matches innerHTML assignment with a plain string literal (no interpolation/concatenation)
+_HARDCODED_INNERHTML_RE = re.compile(
+    r"""innerHTML\s*=\s*['\"][^'\"\n]{5,}['\"]""",
+    re.IGNORECASE | re.DOTALL,
+)
 # DOCUMENT_WRITE_CALLEES, TIMER_CALLEES, COMMAND_EXEC_CALLEES, SHELL_TRUE_CALLEES,
 # SQL_CALLEES, SSRF_CALLEES, PATH_CALLEE_PARTS, callee_matches
 # are all imported from js_engine.constants
@@ -72,6 +83,11 @@ _FRAMEWORK_INTERNAL_JS_MARKERS: tuple[str, ...] = (
 
 _VENDOR_NOISE_CWES: frozenset[str] = frozenset({
     "CWE-22", "CWE-79", "CWE-1321", "CWE-1333", "CWE-601", "CWE-862", "CWE-918",
+})
+
+# CWEs that are noise in test files (test routes don't need auth, etc.)
+_TEST_NOISE_CWES: frozenset[str] = frozenset({
+    "CWE-862", "CWE-352", "CWE-209",
 })
 
 _FRAMEWORK_INTERNAL_NOISE_CWES: frozenset[str] = frozenset({
@@ -128,6 +144,12 @@ def _is_framework_internal_js_path(filename: str) -> bool:
     return any(marker in path_norm for marker in _FRAMEWORK_INTERNAL_JS_MARKERS)
 
 
+def _is_test_js_path(filename: str) -> bool:
+    """Check if the file path suggests a test file."""
+    path_norm = _normalized_path(filename)
+    return any(m in path_norm for m in ("/test/", "/tests/", "/__tests__/", "/spec/", "/e2e/"))
+
+
 def _downgrade_noise_findings(
     findings: list[Finding],
     *,
@@ -153,6 +175,7 @@ def _apply_js_noise_policy(
     filename: str,
     minified: object,
     source_map_path: str | Path | None,
+    project_context: ProjectContext | None = None,
 ) -> list[Finding]:
     if not filename:
         return findings
@@ -176,6 +199,26 @@ def _apply_js_noise_policy(
             confidence=0.25,
             severity=Severity.LOW,
         )
+    # Gap 2: Downgrade CWE-862/352/209 findings in test files
+    # Check via project_context OR via filename heuristic (for fallback findings)
+    is_test = (
+        (project_context and project_context.is_test)
+        or _is_test_js_path(filename)
+    )
+    if is_test:
+        findings = _downgrade_noise_findings(
+            findings,
+            reason="test file heuristic downgraded",
+            cwes=_TEST_NOISE_CWES,
+            confidence=0.25,
+            severity=Severity.LOW,
+        )
+    # Gap 1: Downgrade innerHTML findings where the description shows a hardcoded string
+    for finding in findings:
+        if finding.cwe == "CWE-79" and _HARDCODED_INNERHTML_RE.search(finding.description or ""):
+            finding.confidence = min(finding.confidence, 0.3)
+            if "hardcoded string" not in finding.description:
+                finding.description = f"{finding.description} (hardcoded string — likely FP)"
     return findings
 
 
@@ -448,7 +491,12 @@ def _check_timer_string_eval(
 def _check_command_exec(
     calls: list[JsCall],
     taint_traces: dict[str, tuple[TraceFrame, ...]],
+    *,
+    project_context: ProjectContext | None = None,
 ) -> list[Finding]:
+    # Skip command injection checks in browser-side code
+    if project_context and project_context.skip_node_rules:
+        return []
     findings: list[Finding] = []
     for call in calls:
         if not _callee_matches(call, COMMAND_EXEC_CALLEES) or not call.arguments:
@@ -549,7 +597,14 @@ def _check_sql_injection(
 
 
 
-def _check_dynamic_require(calls: list[JsCall]) -> list[Finding]:
+def _check_dynamic_require(
+    calls: list[JsCall],
+    *,
+    project_context: ProjectContext | None = None,
+) -> list[Finding]:
+    # Skip dynamic require checks in browser-side code
+    if project_context and project_context.skip_node_rules:
+        return []
     findings: list[Finding] = []
     for call in calls:
         # Only match the Node.js global `require()` — not custom object methods like
@@ -591,12 +646,30 @@ _URL_ROUTE_RE = re.compile(
 def _check_path_traversal(
     calls: list[JsCall],
     taint_traces: dict[str, tuple[TraceFrame, ...]],
+    *,
+    code: str = "",
+    project_context: ProjectContext | None = None,
 ) -> list[Finding]:
     findings: list[Finding] = []
     for call in calls:
         short = call.callee.split(".")[-1]
         if short not in PATH_CALLEE_PARTS or not call.arguments:
             continue
+
+        # ── Ambiguous callee guard ────────────────────────────────────
+        # `open` / `openSync` match XMLHttpRequest.open(), modals.open(),
+        # window.open(), etc. — none of which are filesystem operations.
+        # Only flag these when we can confirm they are fs operations.
+        if short in {"open", "openSync"}:
+            if not is_fs_callee(call.callee, code=code):
+                continue
+
+        # ── Runtime context guard ─────────────────────────────────────
+        # If the file is browser-side, skip all path-traversal rules —
+        # there is no filesystem in a browser.
+        if project_context and project_context.skip_node_rules:
+            continue
+
         expr = call.arguments[0]
         # Skip URL route patterns (e.g., '/install/step/' + step) — these are not file paths
         raw_arg = call.raw[call.raw.find(call.arguments[0]):] if call.arguments else ""
@@ -656,7 +729,13 @@ def _check_open_redirect(
 def _check_ssrf(
     calls: list[JsCall],
     taint_traces: dict[str, tuple[TraceFrame, ...]],
+    *,
+    project_context: ProjectContext | None = None,
 ) -> list[Finding]:
+    # Skip SSRF checks in browser-side code — browser fetch() is standard,
+    # not a server-side outbound request to internal infrastructure.
+    if project_context and project_context.skip_node_rules:
+        return []
     findings: list[Finding] = []
     for call in calls:
         if not _callee_matches(call, SSRF_CALLEES) or not call.arguments:
@@ -823,6 +902,7 @@ def analyze_js_ast(code: str, filename: str = "", global_graph: object | None = 
     structural_findings: list[Finding] = []
     minified = detect_minified(filename or "<memory>", code)
     source_map_path = load_sourcemap_path(filename) if filename else None
+    project_ctx = ProjectContext()  # default empty context
 
     try:
         project = build_js_project_index(filename, code) if filename else None
@@ -838,19 +918,24 @@ def analyze_js_ast(code: str, filename: str = "", global_graph: object | None = 
                 global_graph=global_graph,
             )
 
+        # ── Project context detection ─────────────────────────────────
+        # Determines whether this file is browser-side, Node.js, or both.
+        # Used by rule checkers to skip findings that don't apply.
+        project_ctx = classify_runtime(code, file_path=filename)
+
         for checker in (
             lambda: _check_property_xss(property_writes, taint_traces),
             lambda: _check_document_write(calls, taint_traces),
             lambda: _check_eval(calls, taint_traces),
             lambda: _check_function_constructor(calls),
             lambda: _check_timer_string_eval(calls, taint_traces),
-            lambda: _check_command_exec(calls, taint_traces),
+            lambda: _check_command_exec(calls, taint_traces, project_context=project_ctx),
             lambda: _check_shell_true(calls),
             lambda: _check_sql_injection(calls, taint_traces),
-            lambda: _check_dynamic_require(calls),
-            lambda: _check_path_traversal(calls, taint_traces),
+            lambda: _check_dynamic_require(calls, project_context=project_ctx),
+            lambda: _check_path_traversal(calls, taint_traces, code=code, project_context=project_ctx),
             lambda: _check_open_redirect(calls, taint_traces),
-            lambda: _check_ssrf(calls, taint_traces),
+            lambda: _check_ssrf(calls, taint_traces, project_context=project_ctx),
             lambda: _check_csrf_js(code),
             lambda: _check_file_upload_js(code, calls),
             lambda: _check_idor_js(code),
@@ -861,6 +946,7 @@ def analyze_js_ast(code: str, filename: str = "", global_graph: object | None = 
                 filename=filename,
                 project=project,
                 global_graph=global_graph,
+                project_context=project_ctx,
             ),
             lambda: run_react_checks(
                 code,
@@ -931,6 +1017,7 @@ def analyze_js_ast(code: str, filename: str = "", global_graph: object | None = 
         filename=filename,
         minified=minified,
         source_map_path=source_map_path,
+        project_context=project_ctx,
     )
     result.findings = filter_inline_suppressions(merged, code)
 

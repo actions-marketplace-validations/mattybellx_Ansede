@@ -1,8 +1,8 @@
 {
   "kind": "ansede-final-scorecard",
-  "version": 2,
-  "generated_utc": "2026-05-20T12:00:00Z",
-  "engine_version": "2.3.0-dev",
+  "version": 3,
+  "generated_utc": "2026-05-22T17:00:00Z",
+  "engine_version": "2.3.0",
   "metrics": {
     "cve": {
       "recall_pct": 98.78,
@@ -17,9 +17,9 @@
       "corpus": "NVD CVEs (Python/JS/Java/C#/Go)"
     },
     "tests": {
-      "passed": 934,
+      "passed": 206,
       "failed": 0,
-      "total": 934
+      "total": 206
     },
     "web_wild": {
       "recall_pct": 100.0,
@@ -28,6 +28,32 @@
       "fp_rate_pct": 14.29,
       "tp": 6,
       "fp": 1,
+      "fn": 0,
+      "total": 7,
+      "corpus": "OWASP NodeGoat + Flask + Express + Django + FastAPI (7 files)"
+    },
+    "llm_triage": {
+      "memory_entries": 354,
+      "cwe_agent_groups": 26,
+      "scanned_repos": 6,
+      "total_findings_audited": 632,
+      "auto_classification_rate_pct": 95.9,
+      "remaining_needs_review": 26,
+      "total_files_scanned": 5575,
+      "languages": ["Python", "JavaScript", "TypeScript", "Go", "Ruby", "PHP"],
+      "repos": ["pocketbase", "docuseal", "monica", "gogs", "hoppscotch", "hedgedoc", "fastapi"],
+      "llm_model": "gemma3:4b (local Ollama)",
+      "min_confidence_threshold": 0.70,
+      "memory_confidence_gate": 0.75
+    },
+    "ratchet_gate": {
+      "all_checks_passed": true,
+      "cve_recall_above_70": true,
+      "quality_100": true,
+      "external_corpus_100": true
+    }
+  }
+}
       "fn": 0,
       "sampled_files": 50,
       "labeled_files": 6,

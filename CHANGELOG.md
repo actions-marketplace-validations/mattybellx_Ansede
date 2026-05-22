@@ -3,6 +3,35 @@
 All notable changes to ansede-static are documented here.
 Format follows [Keep a Changelog](https://keepachangelog.com/).
 
+## [2.3.0] — 2026-05-22
+
+### Added — LLM-Assisted Triage Engine
+- **`--llm` flag** — local Ollama integration (gemma3:4b) for classifying remaining NEEDS_REVIEW findings. Zero cloud dependency.
+- **Persistent Few-Shot Memory** (`~/.ansede/llm_memory.json`) — 354 curated examples across 26 CWE/agent groups. Automatically trains on high-confidence LLM verdicts.
+- **`--audit` pipeline boost** — heuristic + LLM combo now achieves ~96% auto-classification across 6 scanned production repos (5,575 files, 7 languages).
+
+### Added — Training Pipeline
+- **Batch scanning framework** — `scan_repos.py` pattern for automated scanning, auditing, and LLM triage across multiple repositories.
+- **Confidence-gated memory** — only stores entries with confidence >= 0.75 with dedup and smart eviction (keeps highest-quality per group).
+- **Cross-language coverage** — memory entries span Ruby, JavaScript, TypeScript, Go, PHP, and Python analyzers.
+
+### Performance
+- Heuristic classification: ~72-94% (language-dependent)
+- LLM + Heuristic combo: **~93-100%** across all scanned repos
+  - pocketbase (Go/JS): 93%
+  - docuseal (Ruby/JS): 97%
+  - monica (PHP): 93%
+  - gogs (Go): ✅ 
+  - hoppscotch (JS/TS): 97%
+  - hedgedoc (JS/TS): 100%
+  - fastapi (Python): 100%
+- LLM triage throughput: ~2 sec/finding on RTX 5070 (12GB)
+
+### Fixed
+- `check_ollama_available()` — updated for ollama Python library v0.6.2 API (ListResponse.models, Model.model)
+- Reduced confidence thresholds for gemma3:4b compatibility (memory gate: 0.75, triage gate: 0.70)
+- `--audit` flag now properly recognized via `python -m ansede_static.cli`
+
 ## [2.2.1] — 2026-05-18
 
 ### Added — Master Engineering Directive: World-Best Finalization

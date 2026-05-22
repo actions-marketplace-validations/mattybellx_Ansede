@@ -879,6 +879,26 @@ def build_parser() -> argparse.ArgumentParser:
         help="Show finding descriptions and fix suggestions in text output.",
     )
     parser.add_argument(
+        "--audit", action="store_true",
+        help="Run post-scan audit to classify findings as TP/FP/NeedsReview and export audit report.",
+    )
+    parser.add_argument(
+        "--suggest", action="store_true",
+        help="Analyze audit results and suggest new heuristic rules for audit.py (use with --audit).",
+    )
+    parser.add_argument(
+        "--llm", action="store_true",
+        help="Use local LLM (Ollama) to triage remaining NEEDS_REVIEW findings (use with --audit).",
+    )
+    parser.add_argument(
+        "--llm-model", default="gemma3:4b",
+        help="Ollama model to use for LLM triage (default: gemma3:4b).",
+    )
+    parser.add_argument(
+        "--llm-confidence", type=float, default=0.70,
+        help="Minimum confidence to accept LLM verdict (default: 0.70).",
+    )
+    parser.add_argument(
         "--explain", action="store_true",
         help="Include vulnerability explanations in text output (implies verbose).",
     )
@@ -1006,19 +1026,8 @@ def _build_feedback_parser() -> argparse.ArgumentParser:
 
 
 def _get_version_str() -> str:
-    # Nuitka standalone builds embed __compiled__; use the hardcoded version
-    if getattr(sys, "frozen", False) or hasattr(sys, "_MEIPASS"):
-        return "ansede-static 2.2.1"
-    try:
-        from importlib.metadata import PackageNotFoundError
-    except ImportError:
-        PackageNotFoundError = Exception  # type: ignore[misc,assignment]
-    try:
-        from importlib.metadata import version
-        v = version("ansede-static")
-    except (ImportError, PackageNotFoundError):
-        v = "2.2.1"
-    return f"ansede-static {v}"
+    from ansede_static.engine_version import get_engine_version
+    return f"ansede-static {get_engine_version()}"
 
 
 def _print_config_warnings(warnings: list[str]) -> None:
@@ -2078,6 +2087,70 @@ def _main_impl() -> None:
         cluster_results(results)
     except Exception:
         pass
+
+    # ── Audit pipeline (--audit flag) ───────────────────────────────────────
+    if getattr(args, "audit", False):
+        try:
+            from ansede_static.engine.audit import audit_findings, suggest_improvements, print_suggestions
+            audit_report = audit_findings(results, verbose=args.verbose)
+            audit_path = primary_output_path
+            if audit_path:
+                audit_path = audit_path.parent / (audit_path.stem + "_audit.json")
+            else:
+                audit_path = Path.cwd() / "audit_report.json"
+
+            # ── LLM triage mode (--llm) ──
+            if getattr(args, "llm", False):
+                try:
+                    from ansede_static.engine.llm_triage import triage_report, check_ollama_available
+                    model = getattr(args, "llm_model", "qwen2.5-coder:14b")
+                    min_conf = getattr(args, "llm_confidence", 0.85)
+                    msg = f"ansede-static: checking Ollama ({model})..."
+                    if console:
+                        console.print(f"[cyan]{msg}[/cyan]")
+                    else:
+                        print(msg, file=sys.stderr)
+
+                    if check_ollama_available(model):
+                        audit_report = triage_report(
+                            audit_report,
+                            model=model,
+                            min_confidence=min_conf,
+                            verbose=getattr(args, 'verbose', False),
+                        )
+                        # Re-export with LLM results
+                        audit_report.export_json(audit_path)
+                        msg = f"ansede-static: LLM-triaged audit written to {audit_path}"
+                        if console:
+                            console.print(f"[bold green]{msg}[/bold green]")
+                        else:
+                            print(msg, file=sys.stderr)
+                    else:
+                        msg = f"ansede-static: Ollama not available or model '{model}' not found. Install with: ollama pull {model}"
+                        if console:
+                            console.print(f"[bold yellow]{msg}[/bold yellow]")
+                        else:
+                            print(msg, file=sys.stderr)
+                except ImportError:
+                    print("ansede-static: llm_triage module not available", file=sys.stderr)
+                except Exception as exc:
+                    print(f"ansede-static: LLM triage error: {exc}", file=sys.stderr)
+
+            audit_report.export_json(audit_path)
+            msg = f"ansede-static: audit report written to {audit_path}"
+            if console:
+                console.print(f"[bold green]{msg}[/bold green]")
+            else:
+                print(msg, file=sys.stderr)
+
+            # ── Suggest mode (--suggest) ──
+            if getattr(args, "suggest", False):
+                suggestions = suggest_improvements(audit_report)
+                print_suggestions(suggestions)
+        except Exception as exc:
+            import traceback
+            print(f"ansede-static: audit pipeline error: {exc}", file=sys.stderr)
+            traceback.print_exc()
 
     # ── Format output ───────────────────────────────────────────────────────
     if args.format == "text":

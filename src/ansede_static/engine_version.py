@@ -10,18 +10,21 @@ from typing import Any
 ENGINE_NAME = "ansede-static"
 SCHEMA_VERSION = "1.0"
 
+# Hardcoded fallback when importlib.metadata is unavailable (Nuitka, frozen builds)
+_FALLBACK_VERSION = "2.3.0"
+
 
 def get_engine_version() -> str:
-    """Return the installed package version, or ``dev`` when unavailable."""
+    """Return the installed package version, or the fallback when unavailable."""
     try:
         from importlib.metadata import PackageNotFoundError
     except ImportError:
-        PackageNotFoundError = Exception  # type: ignore[misc,assignment]
+        PackageNotFoundError = Exception
     try:
         from importlib.metadata import version
         return version(ENGINE_NAME)
     except (ImportError, PackageNotFoundError):
-        return "dev"
+        return _FALLBACK_VERSION
 
 
 def get_engine_record() -> dict[str, Any]:

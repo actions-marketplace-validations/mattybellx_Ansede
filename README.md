@@ -8,7 +8,7 @@
 
 <p align="center">
   <strong>The world's most precise offline static application security testing engine.</strong><br>
-  Zero dependencies. 98.8% CVE recall. Five languages. Ships as a single <code>.exe</code>.
+  Zero dependencies. 98.8% CVE recall. Seven languages. LLM-assisted triage. Ships as a single <code>.exe</code>.
 </p>
 
 <p align="center">
@@ -18,6 +18,7 @@
   <a href="https://github.com/mattybellx/Ansede/actions/workflows/ci.yml"><img src="https://github.com/mattybellx/Ansede/actions/workflows/ci.yml/badge.svg?branch=master" alt="CI"></a>
   <a href="https://github.com/mattybellx/Ansede/blob/master/BENCHMARKS.md"><img src="https://img.shields.io/badge/CVE%20Recall-98.8%25-brightgreen" alt="CVE Recall 98.8%"></a>
   <a href="https://github.com/mattybellx/Ansede/blob/master/BENCHMARKS.md"><img src="https://img.shields.io/badge/FP%20Rate-3.6%25-brightgreen" alt="FP Rate 3.6%"></a>
+  <a href="https://github.com/mattybellx/Ansede/blob/master/BENCHMARKS.md"><img src="https://img.shields.io/badge/LLM%20Triage-96%25%20auto-brightgreen" alt="LLM Auto 96%"></a>
   <a href="https://github.com/mattybellx/Ansede/blob/master/LICENSE"><img src="https://img.shields.io/badge/license-MIT-yellow.svg" alt="License MIT"></a>
   <a href="https://github.com/mattybellx/Ansede/stargazers"><img src="https://img.shields.io/github/stars/mattybellx/Ansede?style=social" alt="Stars"></a>
 </p>

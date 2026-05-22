@@ -9,6 +9,7 @@ from pathlib import Path
 from ansede_static._types import TraceFrame
 from ansede_static.ir.global_graph import GlobalGraph
 from ansede_static.js_engine.common import COMMENT_LINE_RE, strip_comments, consume_balanced
+from ansede_static.js_engine.project_context import is_fs_callee
 from ansede_static.js_engine.constants import (
     AUTH_MIDDLEWARE_RE,
     PRIVILEGE_MIDDLEWARE_RE,
@@ -1211,7 +1212,11 @@ def summarize_js_function(
 			initial_traces=initial_traces,
 			direct_source_re=param_source_re,
 		)
-		effects.extend(_direct_effects_for_param(function_def, param_index, taint_traces))
+		effects.extend(_direct_effects_for_param(
+			function_def, param_index, taint_traces,
+			file_code=file_index.code,
+			file_path=file_index.file_path,
+		))
 
 		for return_line, return_expr in return_expressions:
 			wrapper_sanitizer_labels = tuple(
@@ -1516,7 +1521,19 @@ def _direct_effects_for_param(
 	function_def: JsFunctionDef,
 	param_index: int,
 	taint_traces: dict[str, tuple[TraceFrame, ...]],
+	*,
+	file_code: str = "",
+	file_path: str = "",
 ) -> list[HelperEffect]:
+	# Auto-load full file code if not provided but file_path is known
+	# This ensures file-level destructured imports (const { open } = require('fs'))
+	# are visible to is_fs_callee even when the project index is unavailable.
+	if not file_code and file_path:
+		try:
+			file_code = Path(file_path).read_text(encoding="utf-8", errors="replace")
+		except Exception:
+			pass
+
 	effects: list[HelperEffect] = []
 	resource_aliases: set[str] = set()
 	base_line = function_def.line - 1
@@ -1531,7 +1548,12 @@ def _direct_effects_for_param(
 			sink_label = "sink `reply.redirect()`" if call.callee == "reply.redirect" else "sink `res.redirect()`"
 			effects.append(HelperEffect("redirect", param_index, sink_label))
 
-		if short_name in PATH_CALLEE_PARTS and arg0_trace and not trace_has_sanitizer(arg0_trace, "path"):
+		# ── Ambiguous callee guard for open/openSync ──────────────
+		# These match XMLHttpRequest.open(), modals.open(), etc.
+		if short_name in {"open", "openSync"}:
+			if is_fs_callee(call.callee, code=file_code or function_def.body) and arg0_trace and not trace_has_sanitizer(arg0_trace, "path"):
+				effects.append(HelperEffect("path", param_index, "sink `fs/path operation`"))
+		elif short_name in PATH_CALLEE_PARTS and arg0_trace and not trace_has_sanitizer(arg0_trace, "path"):
 			effects.append(HelperEffect("path", param_index, "sink `fs/path operation`"))
 
 		if call.callee in SSRF_CALLEES or short_name in {item.split(".")[-1] for item in SSRF_CALLEES}:
