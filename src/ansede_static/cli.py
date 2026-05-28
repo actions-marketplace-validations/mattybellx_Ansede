@@ -158,13 +158,6 @@ _SKIP_PATH_PATTERNS: tuple[re.Pattern[str], ...] = (
     re.compile(r"(?:^|[/\\])__pycache__(?:[/\\]|$)", re.IGNORECASE),
     re.compile(r"(?:^|[/\\])\.git(?:[/\\]|$)", re.IGNORECASE),
     re.compile(r"yarn-\d+\.\d+\.\d+\.cjs$", re.IGNORECASE),
-    # Exclude own test/benchmark/sample directories to avoid false positives
-    # when scanning the ansede-static repo itself
-    re.compile(r"(?:^|[/\\])tests(?:[/\\]|$)", re.IGNORECASE),
-    re.compile(r"(?:^|[/\\])(?:benchmarks?|benchmark)(?:[/\\]|$)", re.IGNORECASE),
-    re.compile(r"(?:^|[/\\])tmp(?:[/\\]|$)", re.IGNORECASE),
-    re.compile(r"(?:^|[/\\])webapp(?:[/\\]|$)", re.IGNORECASE),
-    re.compile(r"(?:^|[/\\])internet_code_samples(?:[/\\]|$)", re.IGNORECASE),
 )
 
 _SKIP_LARGE_FILES = 1024 * 500
@@ -204,10 +197,19 @@ def _collect_files(paths: list[Path], exclude_patterns: list[str]) -> list[Path]
             if _detect_language(p) and not skip_file and not any(_matches_exclude_pattern(p, pat) for pat in exclude_patterns):
                 files.append(p)
         elif p.is_dir():
+            # Directories to skip entirely during recursive scans
+            _SKIP_DIRS: frozenset[str] = frozenset({
+                "tests", "benchmarks", "benchmark", "tmp", "webapp",
+                "internet_code_samples", "node_modules", "vendor",
+                "__pycache__", ".git", ".venv",
+            })
             for child in sorted(p.rglob("*")):
                 if not child.is_file():
                     continue
                 if _detect_language(child) is None:
+                    continue
+                # Skip files in well-known test/benchmark/sample directories
+                if any(part.lower() in _SKIP_DIRS for part in child.parts):
                     continue
                 skip_file, _ = _should_skip_file(child)
                 if skip_file:
