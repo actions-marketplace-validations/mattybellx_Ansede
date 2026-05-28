@@ -152,7 +152,7 @@ _SKIP_PATH_PATTERNS: tuple[re.Pattern[str], ...] = (
     re.compile(r"(?:^|[/\\])\.next(?:[/\\]|$)", re.IGNORECASE),
     re.compile(r"(?:^|[/\\])\.nuxt(?:[/\\]|$)", re.IGNORECASE),
     re.compile(r"(?:^|[/\\])dist(?:[/\\]|$)", re.IGNORECASE),
-    re.compile(r"(?:^|[/\\](?:build|coverage|\.cache|target|out|bin|obj))(?:[/\\]|$)", re.IGNORECASE),
+    re.compile(r"(?:^|[/\\])(?:build|coverage|\.cache|target|out|bin|obj)(?:[/\\]|$)", re.IGNORECASE),
     re.compile(r"(?:^|[/\\])node_modules(?:[/\\]|$)", re.IGNORECASE),
     re.compile(r"(?:^|[/\\])vendor(?:[/\\]|$)", re.IGNORECASE),
     re.compile(r"(?:^|[/\\])__pycache__(?:[/\\]|$)", re.IGNORECASE),
