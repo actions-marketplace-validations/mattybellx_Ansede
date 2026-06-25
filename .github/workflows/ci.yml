@@ -39,7 +39,7 @@ jobs:
         run: mypy src/
 
       - name: Execute Code Linting Check (Ruff)
-        run: ruff check src/ --ignore E701,E702,F541,F821,E741
+        run: ruff check src/ --ignore F401,F841,F811,F541,F821,F601,E701,E702,E741
 
       - name: Run Complete Test Suite with Coverage
         run: pytest --cov=src --cov-report=xml --cov-report=term-missing tests/

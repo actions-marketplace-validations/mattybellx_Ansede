@@ -197,7 +197,6 @@ def _detect_language(file_path: str) -> str:
         ".json": "json",
         ".xml": "xml",
         ".md": "markdown",
-        ".rs": "rust",
         ".sh": "bash",
         ".bash": "bash",
         ".zsh": "bash",
