@@ -1,0 +1,9 @@
+title: "General"
+labels: ["discussion"]
+body:
+  - type: textarea
+    attributes:
+      label: Topic
+      description: What would you like to discuss?
+    validations:
+      required: true

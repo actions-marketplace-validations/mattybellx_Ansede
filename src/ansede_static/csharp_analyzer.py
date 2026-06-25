@@ -442,7 +442,8 @@ def analyze_csharp(source: str, filename: str = "<input>") -> AnalysisResult:
         # ── CS-008: ASP.NET Core XSS via HttpContext.Response.WriteAsync ──
         _XSS_WRITE_RE = re.compile(
             r'HttpContext\.Response\.WriteAsync\s*\([^)]*\)|'
-            r'Context\.Response\.WriteAsync\s*\([^)]*\)',
+            r'Context\.Response\.WriteAsync\s*\([^)]*\)|'
+            r'Response\.WriteAsync\s*\([^)]*\)',
             re.IGNORECASE,
         )
         if _has_route(method) and _XSS_WRITE_RE.search(method.body):
@@ -573,6 +574,121 @@ def analyze_csharp(source: str, filename: str = "<input>") -> AnalysisResult:
                     confidence=0.75,
                     analysis_kind="pattern",
                 ))
+
+        # ── CS-013: Open redirect via Redirect() (CWE-601) ──────────────
+        _REDIRECT_CS_RE = re.compile(
+            r"Redirect\(\.*returnUrl|RedirectToPage\(\.*returnUrl|RedirectToAction\(\.*returnUrl|"
+            r"LocalRedirect\(\.*returnUrl|this\.Redirect\(",
+            re.IGNORECASE,
+        )
+        if _has_route(method) and _REDIRECT_CS_RE.search(method.body):
+            _REDIRECT_SAFE_RE = re.compile(
+                r"Url\.IsLocalUrl|IsLocalUrl\(|LocalRedirect\(|StartsWith\(\"/\"\)|"
+                r"UrlHelper\.IsLocalUrl|ValidateRedirectUrl",
+                re.IGNORECASE,
+            )
+            if not _REDIRECT_SAFE_RE.search(method.body):
+                findings.append(Finding(
+                    category="security",
+                    severity=Severity.MEDIUM,
+                    title=f"CWE-601: Open redirect via `{method.name}()`",
+                    description="The action redirects to a returnUrl or user-supplied URL without calling Url.IsLocalUrl() first.",
+                    line=_first_matching_line(method.body, _REDIRECT_CS_RE, method.start_line),
+                    suggestion="Validate the redirect target with Url.IsLocalUrl() or use LocalRedirect() to prevent open redirect attacks.",
+                    rule_id="CS-013",
+                    cwe="CWE-601",
+                    agent="csharp-analyzer",
+                    confidence=0.72,
+                    analysis_kind="pattern",
+                ))
+
+        # ── CS-014: Stack trace exposure (CWE-200) ──────────────────────
+        _STACKTRACE_CS_RE = re.compile(
+            r"StackTrace|ExceptionDetail|IncludeErrorDetail|ex\.ToString|GetFullStackTrace|"
+            r"DeveloperExceptionPage|UseDeveloperExceptionPage",
+            re.IGNORECASE,
+        )
+        if _STACKTRACE_CS_RE.search(method.body) and _has_route(method):
+            findings.append(Finding(
+                category="security",
+                severity=Severity.MEDIUM,
+                title=f"CWE-200: Stack trace exposure in `{method.name}()`",
+                description="Exception details are exposed in the HTTP response, leaking internal implementation details.",
+                line=_first_matching_line(method.body, _STACKTRACE_CS_RE, method.start_line),
+                suggestion="Return a generic error message to clients. Log full stack traces server-side only.",
+                rule_id="CS-014",
+                cwe="CWE-200",
+                agent="csharp-analyzer",
+                confidence=0.82,
+                analysis_kind="pattern",
+            ))
+
+        # ── CS-015: Cleartext password in config assignment (CWE-312) ────
+        _CLEARTEXT_CONFIG_RE = re.compile(
+            r"\b(?:Password|Pwd|ApiKey|SharedSecret|AuthToken)\b\s*=\s*\"[^\"]{3,}\"|"
+            r"\bpassword\s*:\s*\"[^\"]+\"|"
+            r"AddConnectionString\s*\([^)]*Password=",
+            re.IGNORECASE,
+        )
+        if _CLEARTEXT_CONFIG_RE.search(method.body):
+            findings.append(Finding(
+                category="security",
+                severity=Severity.HIGH,
+                title=f"CWE-312: Cleartext password in config assignment `{method.name}()`",
+                description="A sensitive credential value is assigned directly as a string literal in code or configuration.",
+                line=_first_matching_line(method.body, _CLEARTEXT_CONFIG_RE, method.start_line),
+                suggestion="Use User Secrets during development and Azure Key Vault or environment variables in production.",
+                rule_id="CS-015",
+                cwe="CWE-312",
+                agent="csharp-analyzer",
+                confidence=0.92,
+                analysis_kind="pattern",
+            ))
+
+        # ── CS-016: ASP.NET Identity misconfiguration (CWE-287) ──────────
+        _IDENTITY_MISCONFIG_RE = re.compile(
+            r"services\.AddDefaultIdentity|services\.AddIdentity\(|Password\.RequireDigit\s*=\s*false|"
+            r"Password\.RequiredLength\s*<\s*8|Lockout\s*=\s*new\s+LockoutOptions|Password\.RequireNonAlphanumeric\s*=\s*false|"
+            r"RequireAuthenticatedUser\s*\(\s*\)|FallbackPolicy\s*=\s*new\s+AuthorizationPolicyBuilder",
+            re.IGNORECASE,
+        )
+        if _IDENTITY_MISCONFIG_RE.search(method.body):
+            findings.append(Finding(
+                category="security",
+                severity=Severity.MEDIUM,
+                title=f"CWE-287: Identity password policy weakness in `{method.name}()`",
+                description="ASP.NET Core Identity is configured with weak password or lockout requirements below recommended thresholds.",
+                line=_first_matching_line(method.body, _IDENTITY_MISCONFIG_RE, method.start_line),
+                suggestion="Require minimum 8 character passwords with digit, uppercase, and non-alphanumeric. Enable account lockout.",
+                rule_id="CS-016",
+                cwe="CWE-287",
+                agent="csharp-analyzer",
+                confidence=0.78,
+                analysis_kind="pattern",
+            ))
+
+        # ── CS-017: Session fixation (CWE-384) ───────────────────────────
+        if _has_route(method) and _has_auth(method):
+            _SESSION_FIXATION_SAFE_RE = re.compile(
+                r"HttpContext\.Session\.Clear|SignInAsync|SignOutAsync|"
+                r"AuthenticationHttpContextExtensions\.SignInAsync",
+                re.IGNORECASE,
+            )
+            if not _SESSION_FIXATION_SAFE_RE.search(method.body):
+                if re.search(r"SignInAsync|PasswordSignInAsync|UserManager\.CheckPassword", method.body, re.IGNORECASE):
+                    findings.append(Finding(
+                        category="security",
+                        severity=Severity.MEDIUM,
+                        title=f"CWE-384: Session not regenerated after authentication in `{method.name}()`",
+                        description="The action performs user authentication but does not call SignOutAsync/SignInAsync to regenerate the session identifier.",
+                        line=method.start_line,
+                        suggestion="Call HttpContext.SignOutAsync() then HttpContext.SignInAsync() after successful authentication to prevent session fixation.",
+                        rule_id="CS-017",
+                        cwe="CWE-384",
+                        agent="csharp-analyzer",
+                        confidence=0.68,
+                        analysis_kind="route_heuristic",
+                    ))
 
     for lineno, line in enumerate(source.splitlines(), start=1):
         if _HARDCODED_CONN_RE.search(line):

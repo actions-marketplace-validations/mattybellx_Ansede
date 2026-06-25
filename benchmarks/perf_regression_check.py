@@ -10,7 +10,7 @@ _log = logging.getLogger(__name__)
 REPO_ROOT = Path(__file__).resolve().parent.parent
 RESULTS_FILE = REPO_ROOT / "tmp" / "perf_regression_results.json"
 _SPEED_BUDGET = {"python": 5.0, "javascript": 5.0, "go": 3.0, "java": 3.0, "csharp": 3.0, "ruby": 2.0, "php": 2.0}
-# DIR-5.2: regression gate — must stay above 500 LOC/s (v4 target: 10_000)
+# DIR-5.2: regression gate — must stay above 500 LOC/s (v4 target: 5_000+ with --batch)
 _MIN_THROUGHPUT_LOC_PER_S = 500
 
 _SNIPPETS = {

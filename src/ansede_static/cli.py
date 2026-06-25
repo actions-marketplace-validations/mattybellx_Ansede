@@ -795,6 +795,97 @@ def _load_baseline(path: Path) -> set[str]:
     return fingerprints
 
 
+def _collect_changed_line_map(workspace_root: Path) -> dict[str, set[int]]:
+    """Collect changed line ranges from git diff hunks keyed by absolute file path."""
+    import os
+    import subprocess
+
+    env_base = os.getenv("GITHUB_BASE_REF", "").strip()
+    candidates: list[list[str]] = []
+    if env_base:
+        candidates.append(["diff", "-U0", "--no-color", f"origin/{env_base}...HEAD"])
+    candidates.extend([
+        ["diff", "-U0", "--no-color", "origin/main...HEAD"],
+        ["diff", "-U0", "--no-color", "origin/master...HEAD"],
+        ["diff", "-U0", "--no-color", "HEAD"],
+    ])
+
+    diff_text = ""
+    for args in candidates:
+        try:
+            diff_text = subprocess.check_output(["git", *args], cwd=str(workspace_root), text=True)
+            if diff_text:
+                break
+        except Exception:
+            continue
+
+    if not diff_text:
+        return {}
+
+    changed: dict[str, set[int]] = {}
+    current_file: Path | None = None
+    hunk_re = re.compile(r"^@@ -\d+(?:,\d+)? \+(\d+)(?:,(\d+))? @@")
+
+    for line in diff_text.splitlines():
+        if line.startswith("+++ "):
+            raw = line[4:].strip()
+            if raw == "/dev/null":
+                current_file = None
+                continue
+            if raw.startswith("b/"):
+                raw = raw[2:]
+            current_file = (workspace_root / raw).resolve()
+            changed.setdefault(str(current_file), set())
+            continue
+
+        if current_file is None:
+            continue
+
+        match = hunk_re.match(line)
+        if not match:
+            continue
+        start = int(match.group(1))
+        count = int(match.group(2) or "1")
+        if count <= 0:
+            continue
+        changed[str(current_file)].update(range(start, start + count))
+
+    return changed
+
+
+def _filter_results_to_changed_lines(
+    results: list[AnalysisResult],
+    changed_line_map: dict[str, set[int]],
+) -> list[AnalysisResult]:
+    """Keep only findings that intersect changed git diff line ranges."""
+    if not changed_line_map:
+        return []
+
+    filtered: list[AnalysisResult] = []
+    for result in results:
+        file_key = str(Path(result.file_path).resolve()) if result.file_path else ""
+        changed_lines = changed_line_map.get(file_key, set())
+        if not changed_lines:
+            continue
+
+        kept_findings = [
+            finding
+            for finding in result.findings
+            if finding.line is not None and finding.line in changed_lines
+        ]
+        if not kept_findings:
+            continue
+
+        filtered.append(AnalysisResult(
+            file_path=result.file_path,
+            language=result.language,
+            findings=kept_findings,
+            parse_error=result.parse_error,
+            lines_scanned=result.lines_scanned,
+        ))
+    return filtered
+
+
 def _parse_auto_fix_block(auto_fix: str) -> tuple[str, str] | None:
     if "BEFORE:" not in auto_fix or "AFTER:" not in auto_fix:
         return None
@@ -1344,8 +1435,11 @@ def build_parser() -> argparse.ArgumentParser:
         help="Minimum confidence to accept LLM verdict (default: 0.70).",
     )
     parser.add_argument(
-        "--explain", action="store_true",
-        help="Include vulnerability explanations in text output (implies verbose).",
+        "--explain", nargs="?", const="__INLINE__", metavar="TOKEN",
+        help=(
+            "With no value: include vulnerability explanations in text output (implies verbose). "
+            "With a value: explain a RULE_ID (e.g., PY-020) or CWE token (e.g., CWE-862) and exit."
+        ),
     )
     parser.add_argument(
         "--no-colour", "--no-color", dest="colour", action="store_false", default=True,
@@ -1371,6 +1465,13 @@ def build_parser() -> argparse.ArgumentParser:
         help="Scan only files changed in git diff (massive monorepo optimization)",
     )
     parser.add_argument(
+        "--diff-only", action="store_true",
+        help=(
+            "Run normal scan then report only findings whose line intersects git diff hunks "
+            "(origin/main...HEAD fallback to working-tree diff)."
+        ),
+    )
+    parser.add_argument(
         "--min-confidence", type=float, default=0.0, metavar="FLOAT",
         help="Suppress findings with confidence below this value (0.0–1.0, default: 0.0).",
     )
@@ -1389,6 +1490,14 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--lsp", action="store_true",
         help="Start ansede-static as an LSP server on stdio for IDE integration.",
+    )
+    parser.add_argument(
+        "--batch", action="store_true",
+        help=(
+            "Batch mode: scan all files with a shared GlobalGraph, rules cache, "
+            "and parallel workers (default: cpu_count). Aims for 5,000+ LOC/s throughput "
+            "by avoiding per-file import overhead."
+        ),
     )
     parser.add_argument(
         "--parallel", action="store_true",
@@ -1419,6 +1528,10 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--cross-language", action="store_true",
         help="Enable cross-language taint tracking: detects taint paths spanning Python/Go backends to JS/TS frontends via route-to-fetch/axios bridges (v3 Unified Source Graph).",
+    )
+    parser.add_argument(
+        "--openapi-report", action="store_true",
+        help="Scan for OpenAPI specs in the project and report route-to-handler bridge matching.",
     )
     parser.add_argument(
         "--auto-rule", action="store_true",
@@ -1943,8 +2056,34 @@ def _main_impl() -> None:
     if args.output_dir:
         args.output_dir.mkdir(parents=True, exist_ok=True)
 
-    if getattr(args, "explain", False):
+    if getattr(args, "explain", None) == "__INLINE__":
         args.verbose = True
+
+    if isinstance(getattr(args, "explain", None), str) and getattr(args, "explain", None) not in {"", "__INLINE__"}:
+        token = str(args.explain).strip()
+        rendered = _render_rule_description(token, args.format == "json")
+        if rendered is not None:
+            print(rendered)
+            from ansede_static.engine.explain import EXPLANATIONS
+
+            contract = describe_rule(token)
+            cwe = str(getattr(contract, "cwe", "") or "").upper() if contract else ""
+            if cwe and cwe in EXPLANATIONS and args.format != "json":
+                print()
+                print(EXPLANATIONS[cwe])
+            sys.exit(0)
+
+        from ansede_static.engine.explain import EXPLANATIONS
+
+        cwe_token = token.upper()
+        if not cwe_token.startswith("CWE-") and cwe_token.isdigit():
+            cwe_token = f"CWE-{cwe_token}"
+        explanation = EXPLANATIONS.get(cwe_token)
+        if explanation is None:
+            print(f"ansede-static: unknown explain token: {token}", file=sys.stderr)
+            sys.exit(2)
+        print(explanation)
+        sys.exit(0)
 
     primary_output_path = _resolve_output_path(
         output=args.output,
@@ -2048,11 +2187,22 @@ def _main_impl() -> None:
         _run_audit_suppressions(_audit_paths, exclude=list(args.exclude))
         sys.exit(0)
 
+    # ── OpenAPI bridge report ──────────────────────────────────────────────────
+    if getattr(args, "openapi_report", False):
+        from ansede_static.graph.openapi_bridge import cli_bridge_report
+        root = Path(".").resolve()
+        if args.paths:
+            root = Path(args.paths[0]).resolve()
+        print(cli_bridge_report(str(root)))
+        sys.exit(0)
+
     # Disable colour if not a tty or explicitly disabled
     colour = args.colour and sys.stdout.isatty()
     execution = {
         "js_backend": backend_execution_record(args.js_backend, experimental_js_ast=args.experimental_js_ast),
     }
+    if getattr(args, "diff_only", False):
+        execution["diff_only"] = {"enabled": True, "status": "requested"}
     if getattr(args, "cross_language", False):
         execution["cross_language"] = {
             "enabled": True,
@@ -2218,9 +2368,32 @@ def _main_impl() -> None:
                     )
                 sys.exit(2)
 
+            # ── Batch mode: shared GlobalGraph + parallel workers via public API ──
+            if getattr(args, "batch", False) and not getattr(args, "entropy", False):
+                import os as _batch_os
+                _batch_n_workers = getattr(args, "workers", None) or _batch_os.cpu_count() or 4
+                if console:
+                    console.print(f"[bold cyan]Batch mode: scanning {len(files)} files with shared cache, {_batch_n_workers} workers...[/bold cyan]")
+                else:
+                    print(f"ansede-static: batch mode: scanning {len(files)} files with {_batch_n_workers} workers", file=sys.stderr)
+                n_workers = _batch_n_workers
+                from ansede_static import scan_files as _batch_scan_files
+                batch_results = _batch_scan_files(
+                    files,
+                    config=config,
+                    js_backend=args.js_backend,
+                    max_workers=n_workers,
+                )
+                results = list(batch_results.values())
+                scan_targets = files
+                # Skip incremental cache, per-file loop, profile — batch already handled everything
+                _batch_mode_done = True
+            else:
+                _batch_mode_done = False
+
             # ── SHA-256 incremental cache: skip unchanged files ────────────────
             _inc_cache = None
-            if getattr(args, "incremental_sha256", False):
+            if getattr(args, "incremental_sha256", False) and not _batch_mode_done:
                 try:
                     from ansede_static.cache.incremental import IncrementalCache
                     _inc_cache = IncrementalCache()
@@ -2286,38 +2459,39 @@ def _main_impl() -> None:
                     print(f"ansede-static: incremental cache warning: {_exc}", file=sys.stderr)
                     _inc_cache = None
 
-            global_graph = GlobalGraph()
-            if files:
-                try:
-                    global_graph.invalidate_changed_files({str(path) for path in files})
-                except Exception:
-                    pass
+            if not _batch_mode_done:
+                global_graph = GlobalGraph()
+                if files:
+                    try:
+                        global_graph.invalidate_changed_files({str(path) for path in files})
+                    except Exception:
+                        pass
 
-            # ── Helper for scanning one file (used in both serial and parallel) ──
-            _file_timings: list[dict] = []
-            _profiler = ScanProfiler() if getattr(args, "profile", False) else None
+                # ── Helper for scanning one file (used in both serial and parallel) ──
+                _file_timings: list[dict] = []
+                _profiler = ScanProfiler() if getattr(args, "profile", False) else None
 
-            def _scan_one(fpath: Path) -> AnalysisResult:
-                t0 = time.perf_counter()
-                result = _analyze_file_with_timeout(
-                    fpath,
-                    requested_js_backend=args.js_backend,
-                    experimental_js_ast=args.experimental_js_ast,
-                    timeout_seconds=args.timeout_per_file,
-                    global_graph=global_graph,
-                    engine=getattr(args, "engine", "auto"),
-                    profiler=_profiler,
-                )
-                elapsed = time.perf_counter() - t0
-                _file_timings.append({
-                    "file": str(fpath),
-                    "ms": round(elapsed * 1000, 1),
-                    "findings": len(result.findings),
-                })
-                return result
+                def _scan_one(fpath: Path) -> AnalysisResult:
+                    t0 = time.perf_counter()
+                    result = _analyze_file_with_timeout(
+                        fpath,
+                        requested_js_backend=args.js_backend,
+                        experimental_js_ast=args.experimental_js_ast,
+                        timeout_seconds=args.timeout_per_file,
+                        global_graph=global_graph,
+                        engine=getattr(args, "engine", "auto"),
+                        profiler=_profiler,
+                    )
+                    elapsed = time.perf_counter() - t0
+                    _file_timings.append({
+                        "file": str(fpath),
+                        "ms": round(elapsed * 1000, 1),
+                        "findings": len(result.findings),
+                    })
+                    return result
 
-            use_parallel = getattr(args, "parallel", False) or getattr(args, "workers", None)
-            worker_count: int | None = getattr(args, "workers", None)
+                use_parallel = getattr(args, "parallel", False) or getattr(args, "workers", None)
+                worker_count: int | None = getattr(args, "workers", None)
 
             # ── Pass 1: Discovery & Graph Building ────────────────────────────
             if files:
@@ -2362,6 +2536,8 @@ def _main_impl() -> None:
             scan_targets = files + entropy_files
             _file_timings: list[dict] = []
             _profiler = ScanProfiler() if getattr(args, "profile", False) else None
+
+        if files:
             if scan_targets:
                 if use_parallel:
                     import os as _os
@@ -2846,6 +3022,18 @@ def _main_impl() -> None:
                     console.print(f"[bold yellow]{msg}[/bold yellow]")
                 else:
                     print(msg, file=sys.stderr)
+
+    if getattr(args, "diff_only", False):
+        changed_line_map = _collect_changed_line_map(workspace_root)
+        results = _filter_results_to_changed_lines(results, changed_line_map)
+        execution["diff_only"] = {
+            "enabled": True,
+            "status": "filtered",
+            "files": len(changed_line_map),
+            "lines": sum(len(lines) for lines in changed_line_map.values()),
+            "remaining_results": len(results),
+            "remaining_findings": sum(len(result.findings) for result in results),
+        }
 
     # ── Format output ───────────────────────────────────────────────────────
     if args.format == "text":

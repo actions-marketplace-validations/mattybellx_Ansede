@@ -103,14 +103,16 @@ Run against a curated corpus of known CVE snippets for regression testing. **The
 
 | Language | Cases | Detected | Recall |
 |---|---|---|---|
-| Python | 55 | 55 | 100% |
-| JavaScript | 31 | 31 | 100% |
-| Go | 7 | 7 | 100% |
-| Java | 12 | 12 | 100% |
-| C# | 10 | 10 | 100% |
-| **Total** | **115** | **115** | **100%** |
+| Python | 68 | 63 | 92.6% |
+| JavaScript | 42 | 38 | 90.5% |
+| Go | 15 | 11 | 73.3% |
+| Java | 20 | 18 | 90.0% |
+| C# | 19 | 13 | 68.4% |
+| **Total** | **164** | **143** | **87.2%** |
 
-**Honest note:** CVE snippet benchmarks measure pattern coverage, not real-world field performance. Perfect recall on 115 isolated snippets does not imply perfect recall on production codebases.
+**Honest note:** CVE snippet benchmarks measure pattern coverage, not real-world field performance. The corpus has expanded from 115 to 164 cases, now covering many CWEs without dedicated analyzer rules — making this a more honest, gap-revealing benchmark.
+
+**Head-to-head comparison:** See the [Head-to-Head section](#head-to-head-ansede-vs-semgrep-oss) below.
 
 ## Web-Wild Validation
 
@@ -227,6 +229,69 @@ Artifacts:
 - [`benchmarks/real_world_drift_summary_may16.json`](benchmarks/real_world_drift_summary_may16.json)
 - [`benchmarks/real_world_drift_summary_may16.md`](benchmarks/real_world_drift_summary_may16.md)
 
+## Top-repo scale runner (v4 roadmap)
+
+For the "top 1,000 repos" validation track, use the batch scanner utility:
+
+```bash
+# Option A: discover repositories directly from GitHub Search API
+python tools/batch_scan_repos.py --github-query "stars:>1000 archived:false" --limit 50 --language python --language javascript --output .tmp/batch_scan_50.json
+
+# Option B: run from a pinned list file
+python tools/batch_scan_repos.py --repos-file benchmarks/campaign_targets_top100.json --limit 100 --max-files-per-repo 3000 --output .tmp/batch_scan_100.json
+
+# Optional: include audit verdicts and estimated FP rate
+python tools/batch_scan_repos.py --repos-file benchmarks/campaign_targets_top100.json --limit 50 --with-audit --output .tmp/batch_scan_50_audit.json
+
+# Generate markdown summary for publication
+python tools/summarize_batch_scan_report.py --input .tmp/batch_scan_50_audit.json --output .tmp/batch_scan_50_audit.md
+```
+
+The report includes per-repo file/line/finding counts plus aggregate top CWEs/rule IDs,
+average findings per repo, and (when `--with-audit` is enabled) an estimated false-positive rate.
+
+Automation:
+
+- Scheduled sample run workflow: [`.github/workflows/batch-repo-scan.yml`](.github/workflows/batch-repo-scan.yml)
+- Scanner image publish workflow: [`.github/workflows/scanner-image.yml`](.github/workflows/scanner-image.yml)
+- Batch report markdown generator: [`tools/summarize_batch_scan_report.py`](tools/summarize_batch_scan_report.py)
+
+## Head-to-Head: Ansede vs Semgrep OSS
+
+Run on the full 115-case CVE corpus:
+
+| Metric | Ansede Static | Semgrep OSS |
+|--------|--------------|-------------|
+| Recall | **87.2%** (143/164) | Requires separate run on semgrep-capable host |
+| Average detection time | ~5ms per snippet | n/a |
+| Total corpus time | 1.2s | n/a |
+
+**Breakdown by language:**
+
+| Language | Cases | Ansede recall |
+|----------|:-----:|:-------------:|
+| Python | 68 | 92.6% |
+| JavaScript | 42 | 90.5% |
+| Go | 15 | 73.3% |
+| Java | 20 | 90.0% |
+| C# | 19 | 68.4% |
+| **Total** | **164** | **87.2%** |
+
+**Misses by missing rule:** The 21 misses are predominantly CWEs without dedicated analyzer rules (CWE-117 log injection, CWE-338 weak PRNG, CWE-617 assertion, CWE-942 CORS, CWE-453 mutable defaults, CWE-822 unsafe pointer, CWE-295 TLS verification). These are known rule gaps, not regression. The 128-case subset with existing rule coverage maintains 99.2% recall.
+
+To reproduce with Semgrep:
+
+```bash
+pip install semgrep
+python -m benchmarks.head_to_head --output results.json
+```
+
+**Caveats:**
+1. This corpus was designed to test Ansede rules — Ansede has an inherent advantage.
+2. Semgrep OSS uses `--config=auto` (~100 rules). Semgrep Pro has more.
+3. A fair benchmark requires a third-party corpus of 500+ CVEs.
+4. Detection = expected CWE in output — does not measure false-positive rate.
+
 ## Related artifacts
 
 - Product scorecard: [`final_product_scorecard.json`](final_product_scorecard.json)
@@ -235,3 +300,19 @@ Artifacts:
 - Web-wild harness: [`benchmarks/web_wild_harness.py`](benchmarks/web_wild_harness.py)
 - Quality guide: [`docs/QUALITY.md`](docs/QUALITY.md)
 - Drift comparator: [`tools/compare_external_runs.py`](tools/compare_external_runs.py)
+- Batch top-repo runner: [`tools/batch_scan_repos.py`](tools/batch_scan_repos.py)
+
+## HTML dashboard
+
+Generate an interactive self-contained HTML dashboard:
+
+```bash
+ansede-static src/ --format html --output report.html
+```
+
+Features:
+- Severity, CWE, and filename filtering (client-side, no reload)
+- Sort by severity, line number, or confidence
+- Live visible-finding count and distinct CWE summary
+- SARIF export button downloads filtered results
+- Collapsible file sections

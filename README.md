@@ -8,7 +8,7 @@
 
 <p align="center">
   <strong>The offline SAST engine that finds what others miss.</strong><br>
-  <strong>Rust-accelerated fast path</strong> · <strong>0.02s per 100k LOC</strong> · <strong>Zero external dependencies</strong><br>
+  <strong>Rust-accelerated fast path</strong> · <strong>0.02s per 100k LOC</strong> · <strong>Zero external network dependencies</strong><br>
   <code>pip install ansede-static</code> &nbsp;·&nbsp; No telemetry &nbsp;·&nbsp; Fully offline
 </p>
 
@@ -61,7 +61,7 @@ ansede-static src/ --incremental           # git-diff mode
 | **Ownership Bypass (CWE-285)** | ✗ | ✗* | ✗ | **✓ AST-native** |
 | Route-level Auth Analysis | ✗ | ✗ | ✗ | **✓ Built-in** |
 | Offline-First | ✓ | ~ needs sync | ✗ SaaS | **✓ Fully offline** |
-| Zero Dependencies | ✓ | ✗ | ✗ | **✓ Pure stdlib** |
+| Zero External Network Dependencies | ✓ | ✗ | ✗ | **✓ Offline-first runtime** |
 
 *\*Semgrep OSS can detect these with custom rules, but no default rules exist.*
 

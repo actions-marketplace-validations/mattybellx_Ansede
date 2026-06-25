@@ -1,0 +1,33 @@
+site_name: Ansede Static
+site_description: Production-grade offline SAST for access-control and taint vulnerabilities
+site_url: https://github.com/mattybellx/Ansede
+repo_url: https://github.com/mattybellx/Ansede
+repo_name: mattybellx/Ansede
+
+# Built-in search via MkDocs Material
+docs_dir: .
+
+plugins:
+  - search
+
+theme:
+  name: material
+  features:
+    - search.highlight
+    - search.share
+    - search.suggest
+
+nav:
+  - Home: docs/index.md
+  - Getting Started: docs/getting-started.md
+  - Configuration: docs/configuration.md
+  - CI Integration: docs/ci-integration.md
+  - IDE Setup: docs/ide-setup.md
+  - Rule Database: docs/rule-database.md
+  - FAQ / Troubleshooting: docs/faq.md
+  - Architecture:
+      - Interprocedural Taint Analysis: docs/interprocedural-taint-analysis.md
+      - IDE Plugin Architecture: docs/ide-plugin-architecture.md
+  - Benchmarks: docs/BENCHMARKS.md
+  - Writing Rules: docs/writing-rules.md
+  - Roadmap: docs/ROADMAP-TO-WORLD-BEST.md

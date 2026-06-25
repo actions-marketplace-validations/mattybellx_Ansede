@@ -16,6 +16,7 @@ import tempfile
 import textwrap
 from pathlib import Path
 from typing import Any
+import time as _time
 
 # Ensure we can import ansede from the src directory
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "src"))
@@ -54,7 +55,9 @@ def run_ansede_on_snippet(cve_id: str, language: str, snippet: str) -> dict[str,
     # Determine filename extension
     ext = _lang_to_ext(language)
 
+    t0 = _time.perf_counter()
     result = scan_code(snippet, language=language, filename=f"{cve_id}{ext}")
+    elapsed = _time.perf_counter() - t0
     findings = result.findings
 
     unique_cwes = sorted(set(
@@ -69,7 +72,7 @@ def run_ansede_on_snippet(cve_id: str, language: str, snippet: str) -> dict[str,
         "total_findings": len(findings),
         "detected_cwes": unique_cwes,
         "detected_rules": unique_rules,
-        "detection_time_ms": 0,  # not measured at this granularity
+        "detection_time_ms": round(elapsed * 1000, 1),
         "error": None,
     }
 
@@ -195,8 +198,17 @@ def run_semgrep_on_snippet(cve_id: str, language: str, snippet: str) -> dict[str
             pass
 
 
-def run_comparison() -> dict[str, Any]:
-    """Run head-to-head comparison on all 35 CVEs."""
+def _semgrep_available() -> bool:
+    try:
+        subprocess.run(["semgrep", "--version"], capture_output=True, timeout=10)
+        return True
+    except (FileNotFoundError, subprocess.TimeoutExpired):
+        return False
+
+
+def run_comparison(*, ansede_only: bool = False) -> dict[str, Any]:
+    """Run head-to-head comparison on all CVE corpus entries."""
+    ansede_only = ansede_only or not _semgrep_available()
 
     results: list[dict[str, Any]] = []
     ansede_hits = 0
@@ -231,28 +243,34 @@ def run_comparison() -> dict[str, Any]:
         ansede_result = run_ansede_on_snippet(cve_id, language, snippet)
         ansede_detected = expected_cwe in ansede_result["detected_cwes"] if expected_cwe else bool(ansede_result["detected_rules"])
         ansede_mark = "✅" if ansede_detected else "❌"
+        ansede_time = ansede_result.get("detection_time_ms", 0)
         if ansede_detected:
             ansede_hits += 1
         else:
             ansede_misses.append(cve_id)
 
-        # Run Semgrep
-        semgrep_result = run_semgrep_on_snippet(cve_id, language, snippet)
-        semgrep_detected = expected_cwe in semgrep_result["detected_cwes"] if expected_cwe else bool(semgrep_result["detected_rules"])
-        semgrep_mark = "✅" if semgrep_detected else "❌"
+        # Run Semgrep (skip if ansede-only mode or semgrep not available)
+        semgrep_result = None
+        semgrep_detected = False
+        if not ansede_only:
+            semgrep_result = run_semgrep_on_snippet(cve_id, language, snippet)
+            semgrep_detected = expected_cwe in semgrep_result["detected_cwes"] if expected_cwe else bool(semgrep_result["detected_rules"])
+            semgrep_mark = "✅" if semgrep_detected else "❌"
+        else:
+            semgrep_mark = "⏭"
         if semgrep_detected:
             semgrep_hits += 1
         else:
             semgrep_misses.append(cve_id)
 
-        print(f"Ansede {ansede_mark}  Semgrep {semgrep_mark}")
+        print(f"Ansede {ansede_mark} ({ansede_time:.0f}ms)  Semgrep {semgrep_mark}")
 
         results.append({
             "cve_id": cve_id,
             "language": language,
             "expected_cwe": expected_cwe,
             "ansede": ansede_result,
-            "semgrep": semgrep_result,
+            "semgrep": semgrep_result if not ansede_only else {"tool": "semgrep-oss", "error": "skipped (no semgrep available)"},
             "ansede_detected": ansede_detected,
             "semgrep_detected": semgrep_detected,
         })
@@ -264,7 +282,12 @@ def run_comparison() -> dict[str, Any]:
     print(f"  RESULTS")
     print(f"{'='*70}")
     print(f"  Ansede-static  : {ansede_hits:2d}/{total} = {ansede_recall:.1f}% recall")
-    print(f"  Semgrep OSS    : {semgrep_hits:2d}/{total} = {semgrep_recall:.1f}% recall")
+    if not ansede_only:
+        semgrep_recall = (semgrep_hits / total * 100) if total else 0
+        print(f"  Semgrep OSS    : {semgrep_hits:2d}/{total} = {semgrep_recall:.1f}% recall")
+    else:
+        semgrep_recall = 0.0
+        print(f"  Semgrep OSS    : skipped (run without --ansede-only on a semgrep-capable host)")
     print(f"{'='*70}")
 
     if ansede_misses:
@@ -300,6 +323,7 @@ def run_comparison() -> dict[str, Any]:
     print()
 
     return {
+        "ansede_only": ansede_only,
         "corpus_size": total,
         "python_cves": counts["python"],
         "javascript_cves": counts["javascript"],
@@ -315,6 +339,8 @@ def run_comparison() -> dict[str, Any]:
             "hits": semgrep_hits,
             "misses": semgrep_misses,
             "recall_pct": round(semgrep_recall, 1),
+        } if not ansede_only else {
+            "note": "Semgrep comparison not run (use without --ansede-only on a semgrep-capable host)",
         },
         "caveats": [
             "Corpus designed by Ansede author — Ansede has inherent advantage",
@@ -328,13 +354,16 @@ def run_comparison() -> dict[str, Any]:
 
 
 if __name__ == "__main__":
-    import time
-    t0 = time.perf_counter()
-    report = run_comparison()
-    elapsed = time.perf_counter() - t0
+    import argparse
+    parser = argparse.ArgumentParser(description="Ansede vs Semgrep head-to-head benchmark")
+    parser.add_argument("--ansede-only", action="store_true", help="Skip Semgrep runs (runs ansede only)")
+    parser.add_argument("--output", type=Path, default=Path("head_to_head_results.json"), help="Output JSON path")
+    args = parser.parse_args()
 
-    # Write JSON report
-    out_path = Path("head_to_head_results.json")
-    out_path.write_text(json.dumps(report, indent=2), encoding="utf-8")
-    print(f"Full results written to {out_path}")
+    t0 = _time.perf_counter()
+    report = run_comparison(ansede_only=args.ansede_only)
+    elapsed = _time.perf_counter() - t0
+
+    args.output.write_text(json.dumps(report, indent=2), encoding="utf-8")
+    print(f"\nFull results written to {args.output}")
     print(f"Total time: {elapsed:.1f}s")

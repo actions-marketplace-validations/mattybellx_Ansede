@@ -1,0 +1,40 @@
+name: 'Ansede Static Scan (Docker)'
+description: 'Run ansede-static from GHCR Docker image for low-friction CI adoption'
+author: 'mattybellx'
+
+branding:
+  icon: 'shield'
+  color: 'blue'
+
+inputs:
+  path:
+    description: 'File or directory to scan'
+    required: false
+    default: '.'
+  format:
+    description: 'Output format: text, json, sarif'
+    required: false
+    default: 'sarif'
+  fail-on:
+    description: 'Severity gate: critical/high/medium/low/info/never'
+    required: false
+    default: 'high'
+  output:
+    description: 'Optional output file path'
+    required: false
+    default: ''
+  args:
+    description: 'Additional args passed to ansede-static'
+    required: false
+    default: ''
+
+runs:
+  using: 'docker'
+  image: 'docker://ghcr.io/ansede/static-scanner:latest'
+  args:
+    - ${{ inputs.path }}
+    - --format
+    - ${{ inputs.format }}
+    - --fail-on
+    - ${{ inputs.fail-on }}
+    - ${{ inputs.args }}

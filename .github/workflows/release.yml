@@ -1,63 +1,161 @@
-name: Release
+name: Production Compilation & Artifact Distribution
 
 on:
   push:
     tags:
-      - 'v*'
+      - 'v*.*.*'
 
 permissions:
-  contents: write   # needed to create a GitHub Release
+  contents: write
 
 jobs:
-  release:
-    name: Create GitHub Release
+  test-suite:
+    name: Full test suite
     runs-on: ubuntu-latest
-
     steps:
       - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
         with:
-          fetch-depth: 0
+          python-version: '3.11'
+      - name: Install
+        run: pip install -e ".[dev]"
+      - name: Unit tests
+        run: python -m pytest tests/ -q --tb=short
+      - name: CVE benchmark
+        run: python -m benchmarks.nvd_benchmark --fail-under 70 --quiet
 
-      - name: Extract version from tag
-        id: version
-        run: echo "VERSION=${GITHUB_REF_NAME#v}" >> "$GITHUB_OUTPUT"
+  compile-binaries:
+    name: Compile Production Binary For ${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
+    needs: test-suite
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-latest
+            artifact_name: ansede-linux-amd64
+          - os: macos-latest
+            artifact_name: ansede-macos-universal
+          - os: windows-latest
+            artifact_name: ansede-windows-amd64.exe
 
-      # Pull the matching section out of CHANGELOG.md for the release body.
-      # Grabs everything between the first "## [<version>]" heading and the
-      # next "## [" heading (or EOF).
-      - name: Extract changelog section
-        id: changelog
+    steps:
+      - name: Checkout Source Code
+        uses: actions/checkout@v4
+
+      - name: Setup Python Production Environment
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install Development & Compiling Bundles
         run: |
-          VERSION="${{ steps.version.outputs.VERSION }}"
-          NOTES=$(awk "/^## \[$VERSION\]/,/^## \[/" CHANGELOG.md \
-            | grep -v "^## \[" | sed '/^$/N;/^\n$/d')
-          {
-            echo "NOTES<<CHANGELOG_EOF"
-            echo "$NOTES"
-            echo "CHANGELOG_EOF"
-          } >> "$GITHUB_OUTPUT"
+          python -m pip install --upgrade pip
+          pip install pyinstaller .
 
-      - name: Create GitHub Release
+      - name: Execute Binary Packaging Engine
+        run: |
+          pyinstaller --onefile --name="${{ matrix.artifact_name }}" src/ansede_static/cli.py
+
+      - name: Upload Binary Stable Builds As Workflow Storage
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.artifact_name }}
+          path: dist/${{ matrix.artifact_name }}*
+
+  build-vscode-extension:
+    name: Build VS Code extension
+    runs-on: ubuntu-latest
+    needs: test-suite
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+      - name: Install dependencies
+        working-directory: vscode-extension
+        run: npm install
+      - name: Compile extension
+        working-directory: vscode-extension
+        run: npm run compile
+      - name: Package VSIX
+        working-directory: vscode-extension
+        run: npx vsce package --no-git-tag-version --no-update-readme
+      - name: Upload VSIX
+        uses: actions/upload-artifact@v4
+        with:
+          name: ansede-vscode-extension
+          path: vscode-extension/*.vsix
+
+  build-intellij-plugin:
+    name: Build IntelliJ plugin
+    runs-on: ubuntu-latest
+    needs: test-suite
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - name: Build plugin
+        working-directory: intellij-plugin
+        run: |
+          chmod +x gradlew
+          ./gradlew buildPlugin
+      - name: Upload plugin ZIP
+        uses: actions/upload-artifact@v4
+        with:
+          name: ansede-intellij-plugin
+          path: intellij-plugin/build/distributions/*.zip
+
+  build-vs2022-extension:
+    name: Build VS 2022 extension
+    runs-on: windows-latest
+    needs: test-suite
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '6.x'
+      - name: Build VSIX
+        working-directory: visualstudio-extension
+        run: dotnet build -c Release
+      - name: Upload VSIX
+        uses: actions/upload-artifact@v4
+        with:
+          name: ansede-vs2022-extension
+          path: visualstudio-extension/bin/Release/*.vsix
+
+  publish-release:
+    name: Aggregate and Generate Official GitHub Release Tag
+    needs: [compile-binaries, build-vscode-extension, build-intellij-plugin, build-vs2022-extension]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Source Code
+        uses: actions/checkout@v4
+
+      - name: Download Build Artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: accumulated_dist/
+
+      - name: Generate Changelog from CHANGELOG.md
+        run: |
+          awk '/^## /{if(c++) exit} {if(c) print}' CHANGELOG.md > accumulated_dist/RELEASE_NOTES.md || echo "No changelog section found" > accumulated_dist/RELEASE_NOTES.md
+
+      - name: Compute Cryptographic SHA256 Verification Fingerprints
+        run: |
+          cd accumulated_dist/
+          find . -type f ! -name "SHA256SUMS.txt" ! -name "RELEASE_NOTES.md" -exec sha256sum {} \; > SHA256SUMS.txt
+
+      - name: Generate GitHub Official Release
         uses: softprops/action-gh-release@v2
         with:
-          name: "ansede-static ${{ github.ref_name }}"
-          body: |
-            ## What's changed
-
-            ${{ steps.changelog.outputs.NOTES }}
-
-            ---
-
-            **Install**
-
-            ```bash
-            pip install "ansede-static==${{ steps.version.outputs.VERSION }}"
-
-            # With colored output
-            pip install "ansede-static[rich]==${{ steps.version.outputs.VERSION }}"
-            ```
-
-            **Full changelog:** https://github.com/mattybellx/Ansede/blob/master/CHANGELOG.md
+          body_path: accumulated_dist/RELEASE_NOTES.md
+          files: |
+            accumulated_dist/**/*
+            accumulated_dist/SHA256SUMS.txt
           draft: false
-          prerelease: ${{ contains(github.ref_name, '-') }}
-          generate_release_notes: true
+          prerelease: false
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

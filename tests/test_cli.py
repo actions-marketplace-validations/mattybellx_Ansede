@@ -8,6 +8,7 @@ from ansede_static.cli import (
     _apply_auto_fixes,
     _artifact_suffix,
     _build_cross_language_execution,
+    _filter_results_to_changed_lines,
     _cross_language_results_from_paths,
     _collect_files,
     _collect_entropy_files,
@@ -140,9 +141,15 @@ def test_render_js_backend_catalog_lists_structural_backend():
 def test_build_parser_accepts_explain_export_rules_and_output_dir():
     args = build_parser().parse_args(["--explain", "--export-rules", "yaml", "--output-dir", "artifacts"])
 
-    assert args.explain is True
+    assert args.explain == "__INLINE__"
     assert args.export_rules == "yaml"
     assert args.output_dir == Path("artifacts")
+
+
+def test_build_parser_accepts_explain_token_argument():
+    args = build_parser().parse_args(["--explain", "PY-020"])
+
+    assert args.explain == "PY-020"
 
 
 def test_build_parser_defaults_export_rules_to_json_when_no_value_is_given():
@@ -538,6 +545,50 @@ def test_incremental_flag_is_accepted():
 
     args2 = build_parser().parse_args(["--incremental-sha256", "src"])
     assert args2.incremental_sha256 is True
+
+
+def test_diff_only_flag_is_accepted():
+    args = build_parser().parse_args(["--diff-only", "src"])
+    assert args.diff_only is True
+
+
+def test_filter_results_to_changed_lines_keeps_only_intersecting_findings(tmp_path):
+    demo = tmp_path / "demo.py"
+    demo.write_text("a\nb\nc\n", encoding="utf-8")
+
+    results = [
+        AnalysisResult(
+            file_path=str(demo),
+            language="python",
+            findings=[
+                Finding(
+                    category="security",
+                    severity=Severity.HIGH,
+                    title="Keep me",
+                    description="",
+                    line=2,
+                    suggestion="",
+                    rule_id="PY-001",
+                ),
+                Finding(
+                    category="security",
+                    severity=Severity.HIGH,
+                    title="Drop me",
+                    description="",
+                    line=3,
+                    suggestion="",
+                    rule_id="PY-002",
+                ),
+            ],
+        )
+    ]
+
+    changed_map = {str(demo.resolve()): {2}}
+    filtered = _filter_results_to_changed_lines(results, changed_map)
+
+    assert len(filtered) == 1
+    assert len(filtered[0].findings) == 1
+    assert filtered[0].findings[0].title == "Keep me"
 
 
 def test_profile_flag_is_accepted():

@@ -575,6 +575,13 @@ _HTML_TEMPLATE = """\
   .stat-card {{ background: var(--surface); border-radius: 8px; padding: 14px; text-align: center; border-top: 3px solid var(--accent); }}
   .stat-card .num {{ font-size: 2rem; font-weight: 700; }}
   .stat-card .label {{ font-size: 0.75rem; color: var(--muted); text-transform: uppercase; letter-spacing: 0.06em; }}
+  .controls {{ display: flex; gap: 12px; flex-wrap: wrap; margin-bottom: 20px; align-items: center; }}
+  .controls label {{ font-size: 0.82rem; color: var(--muted); }}
+  .controls select, .controls input {{ background: var(--surface2); color: var(--text); border: 1px solid #2a4a7f; border-radius: 4px; padding: 6px 10px; font-size: 0.82rem; }}
+  .controls button {{ background: var(--accent); color: #fff; border: none; border-radius: 4px; padding: 6px 14px; font-size: 0.82rem; cursor: pointer; }}
+  .controls button:hover {{ filter: brightness(1.2); }}
+  .stats-row {{ display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 16px; font-size: 0.82rem; color: var(--muted); }}
+  .stats-row span {{ background: var(--surface); padding: 4px 12px; border-radius: 12px; }}
   .file-section {{ background: var(--surface); border-radius: 8px; margin-bottom: 16px; overflow: hidden; }}
   .file-header {{ background: var(--surface2); padding: 12px 16px; font-family: monospace; font-size: 0.85rem; cursor: pointer; user-select: none; display: flex; justify-content: space-between; align-items: center; }}
   .file-header:hover {{ background: #0d2d52; }}
@@ -594,6 +601,7 @@ _HTML_TEMPLATE = """\
   .clean {{ color: var(--muted); font-size: 0.85rem; padding: 10px 16px; }}
   .confidence-bar-wrap {{ display: inline-block; width: 60px; height: 6px; background: rgba(255,255,255,0.1); border-radius: 3px; vertical-align: middle; margin-left: 4px; }}
   .confidence-bar {{ height: 6px; border-radius: 3px; background: #27ae60; }}
+  .hidden {{ display: none !important; }}
   details summary {{ list-style: none; }}
   details summary::-webkit-details-marker {{ display: none; }}
   .toggle {{ font-size: 0.75rem; color: var(--muted); }}
@@ -612,9 +620,90 @@ _HTML_TEMPLATE = """\
   <div class="stat-card"><div class="num">{security}</div><div class="label">Security</div></div>
   <div class="stat-card"><div class="num">{quality}</div><div class="label">Quality</div></div>
 </div>
+<div class="controls">
+  <label>Severity: <select id="sev-filter" onchange="applyFilter()">
+    <option value="all">All</option>
+    <option value="critical">Critical</option>
+    <option value="high">High</option>
+    <option value="medium">Medium</option>
+    <option value="low">Low</option>
+  </select></label>
+  <label>CWE: <input id="cwe-filter" type="text" placeholder="e.g. CWE-862" oninput="applyFilter()"></label>
+  <label>File: <input id="file-filter" type="text" placeholder="filename contains" oninput="applyFilter()"></label>
+  <label>Sort: <select id="sort-select" onchange="applyFilter()">
+    <option value="severity">Severity</option>
+    <option value="line">Line</option>
+    <option value="confidence">Confidence</option>
+  </select></label>
+  <button onclick="exportSARIF()" title="Download SARIF 2.1.0">&#x1F4E5; Export SARIF</button>
+</div>
+<div class="stats-row" id="stats-row">
+  <span id="visible-count">Showing {total} of {total} findings</span>
+  <span id="cwe-distinct"></span>
+</div>
 {file_sections}
 <footer>ansede-static &mdash; SAST engine &mdash; <a href="https://github.com/mattybellx/Ansede" style="color:#7fbfff">github.com/mattybellx/Ansede</a></footer>
 <script>
+  const SEV_ORDER = {{"critical":0,"high":1,"medium":2,"low":3,"info":4}};
+  let findingsData = [];
+
+  document.querySelectorAll('.file-section').forEach((fs, fi) => {{
+    fs.querySelectorAll('.finding').forEach((finding, _) => {{
+      const sevEl = finding.querySelector('.badge');
+      const cweText = (finding.querySelector('.finding-title')?.textContent || '');
+      const fileEl = fs.querySelector('.file-header span:first-child');
+      const locEl = finding.querySelector('.finding-location');
+      const confEl = finding.querySelector('.confidence-bar');
+      findingsData.push({{
+        el: finding,
+        fileSection: fs,
+        file: (fileEl?.textContent || '').trim(),
+        severity: (sevEl?.textContent || '').trim().toLowerCase(),
+        cwe: (cweText.match(/CWE-\d+/) || [''])[0],
+        line: parseInt(locEl?.textContent?.replace('L','') || '0', 10),
+        confidence: confEl ? parseInt(confEl.style.width || '0', 10) / 100 : 0,
+      }});
+    }});
+  }});
+
+  function applyFilter() {{
+    const sev = document.getElementById('sev-filter').value;
+    const cwe = (document.getElementById('cwe-filter').value || '').toUpperCase();
+    const fileQ = (document.getElementById('file-filter').value || '').toLowerCase();
+    const sort = document.getElementById('sort-select').value;
+    let visible = 0;
+
+    findingsData.forEach(d => {{
+      const matchSev = sev === 'all' || d.severity === sev;
+      const matchCwe = !cwe || d.cwe.startsWith(cwe);
+      const matchFile = !fileQ || d.file.toLowerCase().includes(fileQ);
+      const match = matchSev && matchCwe && matchFile;
+      d.el.classList.toggle('hidden', !match);
+      if (match) visible++;
+    }});
+
+    // Sort visible findings per file section
+    findingsData.sort((a, b) => {{
+      if (sort === 'line') return a.line - b.line;
+      if (sort === 'confidence') return (b.confidence - a.confidence);
+      return (SEV_ORDER[a.severity] || 99) - (SEV_ORDER[b.severity] || 99);
+    }});
+
+    // Re-order DOM elements
+    const sections = new Set();
+    findingsData.forEach(d => sections.add(d.fileSection));
+    sections.forEach(section => {{
+      const body = section.querySelector('.file-body');
+      const visibleFindings = findingsData.filter(d => d.fileSection === section && !d.el.classList.contains('hidden'));
+      visibleFindings.forEach(d => body.appendChild(d.el));
+    }});
+
+    document.getElementById('visible-count').textContent = `Showing ${{visible}} of ${{findingsData.length}} findings`;
+
+    const uniqueCWEs = [...new Set(findingsData.filter(d => d.cwe && !d.el.classList.contains('hidden')).map(d => d.cwe))];
+    document.getElementById('cwe-distinct').textContent = uniqueCWEs.length ? `CWE types: ${{uniqueCWEs.length}} (${{uniqueCWEs.join(', ')}})` : '';
+  }}
+
   document.querySelectorAll('.file-header').forEach(h => {{
     h.addEventListener('click', () => {{
       const body = h.nextElementSibling;
@@ -623,6 +712,31 @@ _HTML_TEMPLATE = """\
       if (tog) tog.textContent = body.style.display === 'none' ? '▶' : '▼';
     }});
   }});
+
+  function exportSARIF() {{
+    const sarif = {{
+      version: '2.1.0',
+      runs: [{{
+        tool: {{ driver: {{ name: 'ansede-static', version: '{version}', informationUri: 'https://github.com/mattybellx/Ansede' }} }},
+        results: findingsData.filter(d => !d.el.classList.contains('hidden')).map(d => ({{
+          ruleId: (d.el.querySelector('.tag:first-child')?.textContent || '').trim(),
+          level: d.severity === 'critical' ? 'error' : d.severity === 'high' ? 'error' : d.severity === 'medium' ? 'warning' : 'note',
+          message: {{ text: d.el.querySelector('.finding-title')?.textContent?.replace(/\s*—\s*CWE-\d+$/, '') || 'Finding' }},
+          locations: [{{
+            physicalLocation: {{
+              artifactLocation: {{ uri: d.file, uriBaseId: '%SRCROOT%' }},
+              region: {{ startLine: d.line || 1 }}
+            }}
+          }}]
+        }}))
+      }}]
+    }};
+    const blob = new Blob([JSON.stringify(sarif, null, 2)], {{type: 'application/sarif+json'}});
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = 'ansede-report.sarif';
+    a.click();
+  }}
 </script>
 </body>
 </html>"""

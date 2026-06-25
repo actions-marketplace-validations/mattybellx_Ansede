@@ -14,8 +14,8 @@ import ast
 import json
 import logging
 import re
-from dataclasses import dataclass, field
 from functools import lru_cache
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
@@ -251,6 +251,33 @@ def _load_yaml_or_json_text(text: str) -> Any:
 
 def _load_yaml_or_json(path: Path) -> Any:
     return _load_yaml_or_json_text(path.read_text(encoding="utf-8", errors="replace"))
+
+
+@lru_cache(maxsize=1)
+def _load_rule_schema() -> dict[str, Any] | None:
+    """Load bundled custom-rule JSON schema if present."""
+    schema_path = Path(__file__).resolve().parent / "schemas" / "rule_schema.json"
+    if not schema_path.is_file():
+        return None
+    try:
+        return json.loads(schema_path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return None
+
+
+def _validate_rule_document(payload: Any, *, source_label: str) -> None:
+    """Validate rule payload with jsonschema when available (best-effort)."""
+    schema = _load_rule_schema()
+    if schema is None:
+        return
+    try:
+        import jsonschema  # type: ignore
+    except Exception:
+        return
+    try:
+        jsonschema.validate(instance=payload, schema=schema)
+    except Exception as exc:
+        _log.warning("Rule schema validation warning in %s: %s", source_label, exc)
 
 
 def _is_valid_cwe(cwe: str) -> bool:
@@ -513,6 +540,8 @@ def load_custom_rules(rules_file: str | Path) -> list[CustomRule]:
         _log.warning("Failed to parse custom rules file %s: %s", path, exc)
         return []
 
+    _validate_rule_document(data, source_label=str(path))
+
     if not isinstance(data, dict):
         _log.warning("Custom rules file must be a YAML/JSON object with a 'rules' list: %s", path)
         return []
@@ -548,6 +577,7 @@ def load_community_rule_file(rule_file: str | Path) -> CustomRule | None:
     except Exception as exc:
         _log.warning("Failed to parse community rule file %s: %s", path, exc)
         return None
+    _validate_rule_document(data, source_label=str(path))
     return _parse_rule_entry(data, source_label=str(path), default_rule_id=path.stem, is_community=True)
 
 

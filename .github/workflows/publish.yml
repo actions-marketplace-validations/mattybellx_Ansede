@@ -4,6 +4,9 @@ name: Publish to PyPI
 # Uses PyPI Trusted Publishing (OIDC) as primary path with API token fallback.
 
 on:
+  push:
+    tags:
+      - 'v*.*.*'
   workflow_run:
     workflows: ["Release"]
     types: [completed]
@@ -32,6 +35,12 @@ jobs:
 
       - name: Install build tools
         run: pip install --upgrade build twine
+
+      - name: Install project for smoke tests
+        run: pip install -e ".[test]"
+
+      - name: Run publish smoke tests
+        run: python -m pytest tests/test_cli.py tests/test_reporters.py -q
 
       - name: Build distribution
         run: python -m build

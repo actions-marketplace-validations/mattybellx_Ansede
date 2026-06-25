@@ -1,0 +1,14 @@
+title: "Q&A"
+labels: ["question"]
+body:
+  - type: textarea
+    attributes:
+      label: Question
+      description: What would you like help with?
+    validations:
+      required: true
+  - type: textarea
+    attributes:
+      label: Environment
+      description: "ansede-static version, Python version, OS"
+      placeholder: "ansede-static 2.3.x, Python 3.11, Ubuntu 24.04"

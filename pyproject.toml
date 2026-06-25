@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "ansede-static"
-version = "2.3.2"
+version = "4.0.0"
 description = "AST-based SAST for Python and JavaScript — detects IDOR, auth bypass, and ownership flaws that Bandit misses."
 readme = "README.md"
 license = "MIT"
@@ -37,7 +37,8 @@ classifiers = [
 dependencies = []
 
 [project.optional-dependencies]
-dev        = ["pytest>=8", "pytest-cov>=5", "rich>=13.0.0"]
+dev        = ["pytest>=8", "pytest-cov>=5", "mypy>=1.10", "ruff>=0.5", "rich>=13.0.0"]
+test       = ["pytest>=8", "pytest-cov>=5"]
 rich       = ["rich>=13.0.0"]
 treesitter = ["tree-sitter>=0.20", "tree-sitter-languages>=1.8"]
 graph      = ["networkx>=3.0"]
@@ -58,7 +59,14 @@ Changelog = "https://github.com/mattybellx/Ansede/blob/main/CHANGELOG.md"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/ansede_static"]
-artifacts = ["src/ansede_static/schemas/ansede.schema.json"]
+
+[tool.setuptools.packages.find]
+where = ["src"]
+include = ["ansede_static*"]
+artifacts = [
+    "src/ansede_static/schemas/ansede.schema.json",
+    "src/ansede_static/schemas/rule_schema.json",
+]
 
 [tool.hatch.build.targets.sdist]
 include = [

@@ -593,6 +593,46 @@ def analyze_java(
                 confidence=0.95, analysis_kind="pattern",
             ))
 
+        # JV-013: Stack trace exposure via printStackTrace (CWE-200)
+        _STACKTRACE_RE = re.compile(r"printStackTrace\(\)|Throwable\s*\(|e\.printStack", re.IGNORECASE)
+        _STACKTRACE_SINK_RE = re.compile(r"response\.(?:getWriter|getOutputStream)\.(?:print|write)|sendError", re.IGNORECASE)
+        if _STACKTRACE_RE.search(method.body) and _has_route(method) and _STACKTRACE_SINK_RE.search(method.body):
+            findings.append(Finding(
+                category="security", severity=Severity.MEDIUM,
+                title=f"CWE-200: Stack trace exposure in `{method.name}()`",
+                description="Exception data is written to the HTTP response. Stack traces can leak internal paths, SQL schemas, or library versions.",
+                line=_first_matching_line(method.body, _STACKTRACE_SINK_RE, method.start_line),
+                suggestion="Log the full stack trace server-side and return a generic error message to the client.",
+                rule_id="JV-013", cwe="CWE-200", agent="java-analyzer",
+                confidence=0.85, analysis_kind="pattern",
+            ))
+
+        # JV-014: Spring Security permitAll() on authenticated routes (CWE-287)
+        _PERMIT_ALL_RE = re.compile(r"permitAll\(\)|fullyAuthenticated\(\)", re.IGNORECASE)
+        if _has_route(method) and _has_id_route(method) and _PERMIT_ALL_RE.search(method.body):
+            findings.append(Finding(
+                category="security", severity=Severity.HIGH,
+                title=f"CWE-287: Authentication bypass via permitAll() in `{method.name}()`",
+                description="The route handler configures Spring Security with permitAll() on an endpoint that accesses a scoped resource.",
+                line=_first_matching_line(method.body, _PERMIT_ALL_RE, method.start_line),
+                suggestion="Restrict this endpoint to authenticated users only. Use fullyAuthenticated() or role-based access.",
+                rule_id="JV-014", cwe="CWE-287", agent="java-analyzer",
+                confidence=0.76, analysis_kind="route_heuristic",
+            ))
+
+        # JV-015: Session fixation — no session change on auth (CWE-384)
+        if _has_route(method) and _has_auth(method) and not re.search(r"changeSessionId|session\.invalidate|session\.(?:setAttribute|removeAttribute)|ServletRequest\.changeSessionId", method.body, re.IGNORECASE):
+            if re.search(r"login|authenticate|UserDetails|Authentication\.setAuthenticated", method.body, re.IGNORECASE):
+                findings.append(Finding(
+                    category="security", severity=Severity.MEDIUM,
+                    title=f"CWE-384: Session not regenerated on authentication in `{method.name}()`",
+                    description="The method performs authentication but does not call changeSessionId() or invalidate the existing session, enabling session fixation attacks.",
+                    line=method.start_line,
+                    suggestion="Call request.changeSessionId() after successful authentication to prevent session fixation.",
+                    rule_id="JV-015", cwe="CWE-384", agent="java-analyzer",
+                    confidence=0.72, analysis_kind="route_heuristic",
+                ))
+
     for lineno, line in enumerate(source.splitlines(), start=1):
         if _HARDCODED_SECRET_RE.search(line):
             findings.append(Finding(
