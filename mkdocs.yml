@@ -5,7 +5,7 @@ repo_url: https://github.com/mattybellx/Ansede
 repo_name: mattybellx/Ansede
 
 # Built-in search via MkDocs Material
-docs_dir: .
+docs_dir: docs
 
 plugins:
   - search
@@ -18,16 +18,16 @@ theme:
     - search.suggest
 
 nav:
-  - Home: docs/index.md
-  - Getting Started: docs/getting-started.md
-  - Configuration: docs/configuration.md
-  - CI Integration: docs/ci-integration.md
-  - IDE Setup: docs/ide-setup.md
-  - Rule Database: docs/rule-database.md
-  - FAQ / Troubleshooting: docs/faq.md
+  - Home: index.md
+  - Getting Started: getting-started.md
+  - Configuration: configuration.md
+  - CI Integration: ci-integration.md
+  - IDE Setup: ide-setup.md
+  - Rule Database: rule-database.md
+  - FAQ / Troubleshooting: faq.md
   - Architecture:
-      - Interprocedural Taint Analysis: docs/interprocedural-taint-analysis.md
-      - IDE Plugin Architecture: docs/ide-plugin-architecture.md
-  - Benchmarks: docs/BENCHMARKS.md
-  - Writing Rules: docs/writing-rules.md
-  - Roadmap: docs/ROADMAP-TO-WORLD-BEST.md
+      - Interprocedural Taint Analysis: interprocedural-taint-analysis.md
+      - IDE Plugin Architecture: ide-plugin-architecture.md
+  - Benchmarks: BENCHMARKS.md
+  - Writing Rules: writing-rules.md
+  - Roadmap: ROADMAP-TO-WORLD-BEST.md

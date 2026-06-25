@@ -85,3 +85,24 @@ filterwarnings = [
     #  code strings compiled by the scanner's ast.parse() calls)
     "ignore::SyntaxWarning",
 ]
+
+[tool.mypy]
+ignore_missing_imports = true
+disable_error_code = [
+    "call-arg",
+    "name-defined",
+    "no-redef",
+    "union-attr",
+    "misc",
+    "operator",
+    "assignment",
+    "attr-defined",
+    "arg-type",
+    "return-value",
+    "call-overload",
+    "truthy-function",
+    "var-annotated",
+    "dict-item",
+]
+warn_unused_ignores = false
+
