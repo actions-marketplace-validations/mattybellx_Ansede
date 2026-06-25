@@ -38,9 +38,6 @@ jobs:
       - name: Run Complete Test Suite with Coverage
         run: pytest --cov=src --cov-report=xml --cov-report=term-missing tests/
 
-      - name: Run Complete Test Suite with Coverage
-        run: pytest --cov=src --cov-report=xml --cov-report=term-missing tests/
-
       - name: Upload Coverage Reports to Codecov
         uses: codecov/codecov-action@v4
         with:
