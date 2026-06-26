@@ -818,7 +818,15 @@ class CPGTaintEngine:
         if not name:
             return False
         for sink in self._sinks:
-            if name == sink or name.endswith("." + sink) or sink.endswith("." + name):
+            if name == sink:
+                return True
+            if name.endswith("." + sink):
+                return True
+            # Only allow sink.endswith("." + name) when name is itself
+            # a dotted path (fully qualified). This prevents bare function
+            # names like get(), open(), find() from matching dotted sinks
+            # like requests.get, urllib.request.urlopen, collection.find.
+            if "." in name and sink.endswith("." + name):
                 return True
         return False
 

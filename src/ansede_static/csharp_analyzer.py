@@ -409,14 +409,14 @@ def analyze_csharp(source: str, filename: str = "<input>") -> AnalysisResult:
                 analysis_kind="taint_flow",
             ))
 
-        if re.search(r"\b(?:BinaryFormatter|NetDataContractSerializer)\b", method.body) and re.search(r"\.Deserialize\s*\(", method.body):
+        if re.search(r"\b(?:BinaryFormatter|NetDataContractSerializer|LosFormatter|ObjectStateFormatter)\b", method.body) and re.search(r"\.Deserialize\s*\(", method.body):
             findings.append(Finding(
                 category="security",
                 severity=Severity.CRITICAL,
                 title=f"CWE-502: Dangerous .NET deserialization in `{method.name}()`",
-                description="BinaryFormatter.Deserialize or NetDataContractSerializer.Deserialize can execute attacker-controlled gadget chains.",
+                description="BinaryFormatter.Deserialize, NetDataContractSerializer.Deserialize, LosFormatter.Deserialize, and ObjectStateFormatter.Deserialize can execute attacker-controlled gadget chains.",
                 line=_first_matching_line(method.body, re.compile(r"\.Deserialize\s*\(", re.IGNORECASE), method.start_line),
-                suggestion="Avoid BinaryFormatter/NetDataContractSerializer for untrusted data; use System.Text.Json or safe DTO serialization.",
+                suggestion="Avoid BinaryFormatter/NetDataContractSerializer/LosFormatter for untrusted data; use System.Text.Json or safe DTO serialization.",
                 rule_id="CS-005",
                 cwe="CWE-502",
                 agent="csharp-analyzer",
@@ -689,6 +689,100 @@ def analyze_csharp(source: str, filename: str = "<input>") -> AnalysisResult:
                         confidence=0.68,
                         analysis_kind="route_heuristic",
                     ))
+
+        # ── CS-018: LDAP injection (CWE-90) ──────────────────────────────
+        _LDAP_INJECTION_CS_RE = re.compile(
+            r"DirectorySearcher\s*\(.*\"[^)]*(?:uid=|cn=|sAMAccountName=|mail=|userPrincipalName=)",
+            re.IGNORECASE,
+        )
+        # Also catch property assignment: .Filter = "(uid=" + variable
+        _LDAP_FILTER_ASSIGN_RE = re.compile(
+            r'\.Filter\s*=\s*"[^"]*(?:uid=|cn=|sAMAccountName=|mail=|userPrincipalName=)\s*"\s*\+',
+            re.IGNORECASE,
+        )
+        if _LDAP_INJECTION_CS_RE.search(method.body) or _LDAP_FILTER_ASSIGN_RE.search(method.body):
+            findings.append(Finding(
+                category="security",
+                severity=Severity.CRITICAL,
+                title=f"CWE-90: LDAP injection via DirectorySearcher in `{method.name}()`",
+                description="LDAP search filter is built using string concatenation with unescaped user input.",
+                line=_first_matching_line(method.body, _LDAP_INJECTION_CS_RE, method.start_line),
+                suggestion="Use an LDAP escaping helper to sanitize user input before inserting into search filters.",
+                rule_id="CS-018",
+                cwe="CWE-90",
+                agent="csharp-analyzer",
+                confidence=0.85,
+                analysis_kind="pattern",
+            ))
+
+        # ── CS-019: Weak random for security (CWE-338) ───────────────────
+        _WEAK_RANDOM_CS_RE = re.compile(
+            r"System\.Random|new\s+Random\s*\(",
+            re.IGNORECASE,
+        )
+        if _WEAK_RANDOM_CS_RE.search(method.body):
+            # Check both method body AND method name/context for security signals
+            _security_ctx = re.compile(
+                r"token|password|secret|key|nonce|otp|csrf|session|auth|"
+                r"generate|token|hash|crypto|code|pin|otp|verification",
+                re.IGNORECASE,
+            )
+            if _security_ctx.search(method.body) or _security_ctx.search(method.name):
+                findings.append(Finding(
+                    category="security",
+                    severity=Severity.MEDIUM,
+                    title=f"CWE-338: Weak random number generator in `{method.name}()`",
+                    description="System.Random is not cryptographically secure. If used for security tokens, an attacker can predict outputs.",
+                    line=_first_matching_line(method.body, _WEAK_RANDOM_CS_RE, method.start_line),
+                    suggestion="Use System.Security.Cryptography.RandomNumberGenerator for security-sensitive values.",
+                    rule_id="CS-019",
+                    cwe="CWE-338",
+                    agent="csharp-analyzer",
+                    confidence=0.70,
+                    analysis_kind="pattern",
+                ))
+
+        # ── CS-020: WebForms XSS via Response.Write (CWE-79) ────────────
+        _WEBFORMS_XSS_CS_RE = re.compile(
+            r"Response\.Write\s*\([^)]*(?:Request|QueryString|Form|Server\.HtmlEncode(?!.*\)))",
+            re.IGNORECASE,
+        )
+        # Broader: Response.Write with string concatenation or variables in same method as request access
+        _WEBFORMS_XSS_BROAD_RE = re.compile(
+            r"Response\.Write\s*\(", re.IGNORECASE,
+        )
+        _WEBFORMS_REQUEST_ACCESS_RE = re.compile(
+            r"Request\.(?:QueryString|Form|Params)\[", re.IGNORECASE,
+        )
+        if _WEBFORMS_XSS_CS_RE.search(method.body):
+            findings.append(Finding(
+                category="security",
+                severity=Severity.HIGH,
+                title=f"CWE-79: XSS via unencoded Response.Write in `{method.name}()`",
+                description="Response.Write is called with user input without HTML encoding, enabling XSS attacks.",
+                line=_first_matching_line(method.body, _WEBFORMS_XSS_CS_RE, method.start_line),
+                suggestion="Use Server.HtmlEncode() or switch to encoded Razor helpers (@ syntax) instead of Response.Write.",
+                rule_id="CS-020",
+                cwe="CWE-79",
+                agent="csharp-analyzer",
+                confidence=0.85,
+                analysis_kind="pattern",
+            ))
+        elif _WEBFORMS_XSS_BROAD_RE.search(method.body) and _WEBFORMS_REQUEST_ACCESS_RE.search(method.body):
+            if not re.search(r"Server\.HtmlEncode|HttpUtility\.HtmlEncode", method.body, re.IGNORECASE):
+                findings.append(Finding(
+                    category="security",
+                    severity=Severity.HIGH,
+                    title=f"CWE-79: Potential XSS via unencoded Response.Write in `{method.name}()`",
+                    description="Method uses Response.Write and accesses Request data. If user input flows to the Write call, XSS is possible.",
+                    line=method.start_line,
+                    suggestion="Encode output with Server.HtmlEncode() or use Razor @ syntax.",
+                    rule_id="CS-020",
+                    cwe="CWE-79",
+                    agent="csharp-analyzer",
+                    confidence=0.75,
+                    analysis_kind="pattern",
+                ))
 
     for lineno, line in enumerate(source.splitlines(), start=1):
         if _HARDCODED_CONN_RE.search(line):

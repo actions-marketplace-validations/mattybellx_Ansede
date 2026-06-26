@@ -644,6 +644,21 @@ def analyze_java(
                 rule_id="JV-006", cwe="CWE-798", agent="java-analyzer",
                 confidence=0.96, analysis_kind="pattern",
             ))
+        # JV-016: Log injection (CWE-117)
+        _JAVA_LOG_INJECT_RE = re.compile(
+            r'(?:logger|log)\.(?:info|warning|severe|fine|finer|finest|error|debug)\s*\([^)]*\+',
+            re.IGNORECASE,
+        )
+        if _JAVA_LOG_INJECT_RE.search(line):
+            findings.append(Finding(
+                category="security", severity=Severity.MEDIUM,
+                title="CWE-117: Log injection via string concatenation in Java",
+                description="Logger call uses string concatenation with potentially user-controlled data, enabling CRLF injection into logs.",
+                line=lineno,
+                suggestion="Use parameterized logging: `log.warning(\"Login from {0}\", user)` to avoid log injection.",
+                rule_id="JV-016", cwe="CWE-117", agent="java-analyzer",
+                confidence=0.80, analysis_kind="pattern",
+            ))
 
     # Javac structural enrichment (optional, graceful degradation)
     if use_javac:

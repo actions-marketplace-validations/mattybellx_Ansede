@@ -500,6 +500,57 @@ RULES: list[Rule] = [
         Severity.HIGH,
         r'\[\s*["\']__proto__["\']\s*\]|\.__proto__\s*=',
     ),
+    # ─── Prototype pollution via unsafe object merge — CWE-1321 ──────────────────
+    Rule(
+        "JS-061", "CWE-1321",
+        "CWE-1321: Prototype pollution via unsafe object merge at line {line}",
+        "Unsafe object merge/assign at L{line}: `{snippet}`. "
+        "Merging user-controlled properties without key validation can pollute the prototype chain.",
+        "Use a safe merge with key allowlist: `for (const k of Object.keys(data)) { if (k === '__proto__') continue; }`",
+        Severity.HIGH,
+        r'(?:merge|assign|extend|defaults)\s*\(\s*(?:true|false)?\s*,\s*(?:req\.|request\.|body|data|input|JSON\.parse)',
+    ),
+    # ─── Prototype pollution via user-data for-in loop — CWE-1321 ─────────
+    Rule(
+        "JS-064", "CWE-1321",
+        "CWE-1321: Prototype pollution via for-in with user data at line {line}",
+        "For-in loop copying user object properties at L{line}: `{snippet}`. "
+        "Any property including `__proto__` is copied from user input.",
+        "Use `Object.hasOwnProperty.call(source, key)` or a Map to safely iterate.",
+        Severity.HIGH,
+        r'for\s*\(\s*(?:var|let|const)?\s*\w+\s*in\s*(?:req\.|request\.|body|data|source|input|JSON\.parse)',
+    ),
+    # ─── CWE-601: Next.js / Express open redirect ────────────────────────
+    Rule(
+        "JS-062", "CWE-601",
+        "CWE-601: Open redirect via user-controlled URL at line {line}",
+        "Open redirect at L{line}: `{snippet}`. "
+        "Using user-supplied URLs in redirect() allows phishing attacks.",
+        "Validate redirect target: check host against an allowlist, or use framework safe-redirect utilities.",
+        Severity.HIGH,
+        r'(?:res\.redirect|res\.redirect\s*\(|redirect\s*\().*(?:req\.query\.|req\.params\.|req\.body\.)',
+    ),
+    # ─── CWE-295: TLS verification disabled ──────────────────────────────
+    Rule(
+        "JS-063", "CWE-295",
+        "CWE-295: TLS verification disabled via NODE_TLS_REJECT_UNAUTHORIZED at line {line}",
+        "TLS verification disabled at L{line}: `{snippet}`. "
+        "Disabling TLS verification makes HTTPS connections vulnerable to MITM attacks.",
+        "Remove this override. Use valid certificates or set NODE_TLS_REJECT_UNAUTHORIZED=1 in production.",
+        Severity.CRITICAL,
+        r'NODE_TLS_REJECT_UNAUTHORIZED\s*=\s*0|rejectUnauthorized\s*:\s*false|process\.env\.NODE_TLS_REJECT_UNAUTHORIZED\s*=',
+    ),
+    # ─── CWE-601: Next.js getServerSideProps redirect ────────────────────
+    Rule(
+        "JS-065", "CWE-601",
+        "CWE-601: Open redirect via Next.js getServerSideProps at line {line}",
+        "Next.js redirect with user-controlled destination at L{line}: `{snippet}`. "
+        "Using `ctx.query.url` in a Server-Side Props redirect allows phishing.",
+        "Validate the destination against an allowlist before redirecting. Use framework safe-redirect helpers.",
+        Severity.HIGH,
+        r'redirect\s*:\s*\{[\s\S]*?destination\s*:\s*(?:ctx|context|req)\.query\.',
+        context_confirm=r'getServerSideProps|getStaticProps',
+    ),
 ]
 
 

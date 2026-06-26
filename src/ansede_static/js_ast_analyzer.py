@@ -1000,15 +1000,10 @@ def _rust_fast_path(code: str, filename: str) -> AnalysisResult | None:
     if not raw or not raw.get("nodes"):
         return None
 
-    nodes = raw["nodes"]
-    # Quick heuristic: if there are no call expressions, no identifiers
-    # matching common taint sources, and no imports — file is trivially clean
-    has_calls = any(n.get("kind") in ("call", "call_expression") for n in nodes)
-    if not has_calls:
-        result = AnalysisResult(file_path=filename, language=lang, lines_scanned=raw.get("lines_scanned", 0))
-        return result
-
-    # Has calls — need full analysis
+    # Fast-path short-circuit disabled: pattern rules and other
+    # non-call-based detectors (e.g. open redirect, prototype pollution)
+    # can trigger even when no call expressions are present.
+    # Always fall through to full analysis.
     return None
 
 

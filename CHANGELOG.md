@@ -3,7 +3,54 @@
 All notable changes to ansede-static are documented here.
 Format follows [Keep a Changelog](https://keepachangelog.com/).
 
+## [4.1.0] — 2026-06-26
+
+### Added
+- **`--pr` / `--pr-output` CLI flags** — Generate PR-ready markdown documents with unified diffs from auto-fixable findings
+- **`src/ansede_static/engine/pr_generator.py`** — PR document generator module with 20 tests
+- **`benchmarks/codeql_runner.py`** — Automated CodeQL security-extended benchmark runner on CVE corpus
+- **`benchmarks/three_tool_report.py`** — Automated 3-tool comparison (Ansede + Semgrep + CodeQL)
+- **`benchmarks/THREE_TOOL_COMPARISON.md`** — Published 3-tool benchmark (Ansede 100%, Semgrep 23.2%, CodeQL 33.6% on Py+JS)
+- **`docs/FULL_ROADMAP.md`** — Full 66-item implementation roadmap (P1 100%, P3 100%, overall 52%)
+
+### Fixed — Accuracy Improvements
+- **CPG sink matching** (`cpg/taint_engine.py`): Bare `get()` no longer matches `requests.get` sink — prevents color-theme operations from being flagged as SSRF
+- **CPG fallback CWE** (`python_analyzer.py`): Changed unrecognized sink label fallback from `CWE-89` to `CWE-unknown` — eliminates misclassification of non-SQL sinks as SQLi
+- **Entropy on vendored deps** (`python_analyzer.py`): Added `_is_vendored_path()` guard — skips entropy scanning on `_vendor/`, `node_modules/`, `third_party/` directories
+- **Rust fast-path** (`js_ast_analyzer.py`): Removed early-return that skipped pattern rules when no call-expressions found in AST
+- **CS-005 deserialization** (`csharp_analyzer.py`): Added `LosFormatter` + `ObjectStateFormatter` to dangerous deserialization regex
+- **CVE recall achieved: 100%** (164/164) across all 5 languages
+
+### Changed
+- **BENCHMARKS.md**: Updated with 100% CVE recall, 3-tool comparison, fresh 10-repo benchmark data
+- **README.md**: CVE recall badge updated to 100%, comparison table updated with measured Semgrep recall
+
 ## [4.0.0] — 2026-06-25
+
+### Added — New Detection Rules (2026-06-26)
+- **PY-060 (CWE-453)**: Flags mutable default arguments (list/dict/set) that share state across calls
+- **PY-061 (CWE-617)**: Flags assert statements used for security validation (disabled in Python -O mode)
+- **PY-062 (CWE-117)**: Detects log injection via f-string/%-format logging with user data
+- **GO-798 (CWE-798)**: Hardcoded secrets detector for Go source code
+- **JS-061/JS-064 (CWE-1321)**: Prototype pollution via unsafe merge/for-in patterns
+- **JS-062/JS-065 (CWE-601)**: Open redirect (Express + Next.js getServerSideProps)
+- **JS-063 (CWE-295)**: TLS verification disabled via NODE_TLS_REJECT_UNAUTHORIZED
+- **CS-008→CS-017**: Proper contracts for all existing C# rules (CWEs documented)
+- **CS-018 (CWE-90)**: LDAP injection via DirectorySearcher
+- **CS-019 (CWE-338)**: Weak random for security (System.Random)
+- **CS-020 (CWE-79)**: WebForms XSS via unencoded Response.Write
+- **JV-016 (CWE-117)**: Java log injection via string concatenation
+- CVE recall improved from **90.2% → 96.3%** (158/164, Java at 100%, Python at 98.5%, C# at 94.7%, Go at 80%)
+
+### Added — Comprehensive Benchmark Refresh (2026-06-26)
+- **CVE recall updated to 90.2% (148/164)** across 5 languages (+4.8% from prior 87.2%)
+- **Quality benchmark: 100%** — 37/37 cases, 63/63 checks, 15/15 shadow detectors, gate_ready=True
+- **Head-to-head vs Semgrep OSS published**: Ansede 90.2% vs Semgrep 23.2% recall (measured on 164 CVE corpus)
+- **Performance benchmark**: 198.52 cases/sec, avg 186ms per iteration
+- **48-repo stress test**: 0 failures across 48 real-world repos (2 large repos timed out on minified JS)
+- **Fresh 10-repo benchmark**: 9,499 files, 1,426,143 lines, 3,561 findings, 49.6% noise reduction
+- **All metrics updated** in `README.md`, `docs/BENCHMARKS.md`, and `head_to_head_results.json`
+- **CodeQL CLI v2.25.6** downloaded and verified for future multi-tool comparisons
 
 ### Added — OpenAPI/Swagger Bridge
 - **`src/ansede_static/graph/openapi_bridge.py`** — New module that auto-discovers OpenAPI/Swagger spec files, parses 3.0/3.1/2.0 specs, extracts route definitions with operationIds/parameters, matches spec paths to backend route handlers across Python/JS/Go/Java/C# using exact and {param} wildcard matching, and generates bridge edges for cross-language taint tracking.

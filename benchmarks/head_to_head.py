@@ -22,7 +22,7 @@ import time as _time
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "src"))
 
 from ansede_static import scan_code, _PYTHON_EXTS, _JS_EXTS, _GO_EXTS, _JAVA_EXTS, _CSHARP_EXTS
-from benchmarks.cve_corpus import CVE_CORPUS
+from cve_corpus import CVE_CORPUS
 
 
 def _ext_to_lang(filename: str) -> str:

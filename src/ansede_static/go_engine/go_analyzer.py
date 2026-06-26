@@ -80,7 +80,7 @@ _GO_DANGEROUS_SINKS: Dict[str, Tuple[str, str, str]] = {
     "net/http.Head": ("CWE-918", "SSRF via http.Head", "high"),
     "http.NewRequest": ("CWE-918", "SSRF via http.NewRequest", "high"),
     "json.Unmarshal": ("CWE-502", "Unsafe Deserialization via json.Unmarshal", "low"),
-    "gob.NewDecoder": ("CWE-502", "Unsafe Deserialization via gob.NewDecoder", "high"),
+    "gob.NewDecoder": ("CWE-502", "Unsafe Deserialization via gob.NewDecoder", "critical"),
     "xml.Unmarshal": ("CWE-502", "XXE/Unsafe Deserialization via xml.Unmarshal", "high"),
     "crypto/md5.New": ("CWE-327", "Weak Cryptography — MD5", "medium"),
     "crypto/sha1.New": ("CWE-327", "Weak Cryptography — SHA-1", "medium"),
@@ -91,7 +91,7 @@ _GO_DANGEROUS_SINKS: Dict[str, Tuple[str, str, str]] = {
     "log.Println": ("CWE-532", "Sensitive Data in Logs via log.Println", "low"),
     "log.Fatalf": ("CWE-532", "Sensitive Data in Logs via log.Fatalf", "low"),
     "reflect.ValueOf": ("CWE-470", "Unsafe reflection via reflect.ValueOf", "medium"),
-    "unsafe.Pointer": ("CWE-823", "Use of unsafe.Pointer", "medium"),
+    "unsafe.Pointer": ("CWE-822", "Unsafe pointer dereference via unsafe.Pointer", "high"),
 }
 
 _GO_AUTH_MIDDLEWARE_PATTERNS: List[str] = [
@@ -227,8 +227,9 @@ def _locate_handler_registration_line(finding: Finding, lines: List[str]) -> int
 class GoSecurityWalker:
     """Walk a Go AST and collect security findings."""
 
-    def __init__(self, filename: str = "<input>"):
+    def __init__(self, filename: str = "<input>", code: str = ""):
         self.filename = filename
+        self.code = code
         self.findings: List[Finding] = []
         self._imports: Dict[str, str] = {}  # local name -> import path
         self._current_func: Optional[str] = None
@@ -248,7 +249,67 @@ class GoSecurityWalker:
         for decl in gofile.decls:
             self._walk_decl(decl)
         self._check_missing_auth()
+        self._detect_hardcoded_secrets()
+        self._detect_regex_sinks()
         return self.findings
+
+    _GO_SECRET_PATTERNS: List[Tuple[str, str]] = [
+        (r'(?:api[_-]?key|apikey)\s*[=:]\s*["\'][A-Za-z0-9_\-]{8,}["\']', "API key"),
+        (r'(?:password|passwd|pwd)\s*[=:]\s*["\'][^"\']{4,}["\']', "Hardcoded password"),
+        (r'(?:secret[_-]?key|secretkey)\s*[=:]\s*["\'][^"\']{4,}["\']', "Secret key"),
+        (r'(?:token|auth_token|access_token)\s*[=:]\s*["\'][A-Za-z0-9_\-\.]{16,}["\']', "Auth token"),
+        (r'sk-[A-Za-z0-9]{20,}', "OpenAI/Stripe secret key"),
+        (r'ghp_[A-Za-z0-9]{36}', "GitHub personal access token"),
+        (r'-----BEGIN (?:RSA |EC |DSA )?PRIVATE KEY-----', "Private key"),
+    ]
+
+    def _detect_hardcoded_secrets(self) -> None:
+        """Detect hardcoded secrets in Go source code via regex."""
+        for lineno, line in enumerate(self.code.splitlines(), start=1):
+            stripped = line.strip()
+            if stripped.startswith("//") or stripped.startswith("/*"):
+                continue
+            for pattern, secret_type in self._GO_SECRET_PATTERNS:
+                if re.search(pattern, stripped, re.IGNORECASE):
+                    self.findings.append(Finding(
+                        category="security",
+                        severity=Severity.CRITICAL,
+                        title=f"CWE-798: Hardcoded {secret_type} in Go source at line {lineno}",
+                        description=f"A {secret_type} is hardcoded in Go source at L{lineno}. This is visible in version control.",
+                        line=lineno,
+                        suggestion="Use environment variables or a secrets manager. Rotate this credential immediately.",
+                        rule_id="GO-798",
+                        cwe="CWE-798",
+                        agent="go-analyzer",
+                        confidence=0.95,
+                        analysis_kind="pattern",
+                    ))
+                    break
+
+    def _detect_regex_sinks(self) -> None:
+        """Regex-based fallback for dangerous patterns missed by AST walker (chained calls, type conversions)."""
+        _GO_REGEX_SINKS = [
+            (r"gob\.NewDecoder", "CWE-502", "Unsafe deserialization via gob.NewDecoder", "critical"),
+            (r"unsafe\.Pointer\s*\(", "CWE-822", "Unsafe pointer dereference via unsafe.Pointer", "high"),
+        ]
+        for pattern, cwe, title, severity in _GO_REGEX_SINKS:
+            if re.search(pattern, self.code, re.IGNORECASE):
+                for lineno, line in enumerate(self.code.splitlines(), start=1):
+                    if re.search(pattern, line, re.IGNORECASE):
+                        self.findings.append(Finding(
+                            category="security",
+                            severity=Severity(severity),
+                            title=title,
+                            description=f"Pattern `{pattern}` found at L{lineno} — review for security implications.",
+                            line=lineno,
+                            suggestion="Review this usage. If the data is untrusted, add validation or use a safer alternative.",
+                            rule_id=f"GO-{cwe.replace('CWE-', '')}",
+                            cwe=cwe,
+                            agent="go-analyzer",
+                            confidence=0.70,
+                            analysis_kind="go-ast-sink",
+                        ))
+                        break
 
     def _walk_decl(self, decl: GoFuncDecl) -> None:
         prev = self._current_func
@@ -310,16 +371,21 @@ class GoSecurityWalker:
             self._handlers.append(("ANY", path, handler_name, has_auth, call.loc[0]))
             return
 
-        # Detect mux.Handle, router.GET, etc.
+        # Detect mux.Handle, router.GET, etc. — restrict to router-like receivers
+        # to avoid treating http.Post(url, ...) as a route registration.
         if func_name:
             upper = func_name.upper()
-            method = next((m for m in _GO_HTTP_METHODS if func_name.upper().endswith("." + m)), None)
-            if method and len(call.args) >= 2:
-                path = _resolve_expr_name(call.args[0]) or "/"
-                handler_name = _resolve_expr_name(call.args[1]) or "unknown"
-                has_auth = _is_auth_pattern(handler_name)
-                self._handlers.append((method, path, handler_name, has_auth, call.loc[0]))
-                return
+            # Only treat as route registration if the receiver looks like a router variable
+            # (short names like r, router, mux, app, srv, server) not "http", "net", etc.
+            _receiver = func_name.split(".")[0].lower() if "." in func_name else ""
+            if _receiver in {"r", "router", "mux", "app", "srv", "server", "engine", "group", "api"}:
+                method = next((m for m in _GO_HTTP_METHODS if upper.endswith("." + m)), None)
+                if method and len(call.args) >= 2:
+                    path = _resolve_expr_name(call.args[0]) or "/"
+                    handler_name = _resolve_expr_name(call.args[1]) or "unknown"
+                    has_auth = _is_auth_pattern(handler_name)
+                    self._handlers.append((method, path, handler_name, has_auth, call.loc[0]))
+                    return
 
         # Detect middleware registration: r.Use(...), router.Use(...), ginRouter.Use(...)
         if func_name and func_name.endswith(".Use") and len(call.args) >= 1:
@@ -380,6 +446,28 @@ class GoSecurityWalker:
 
         # Walk sub-expressions (including func so chained calls like
         # exec.Command(...).Output() properly visit the inner dangerous call).
+
+        # --- XSS detection for standalone response writes (not just assignments) ---
+        if sink_info is None and func_name:
+            _xss_pats = ["Write", "Execute", "WriteString", "Fprintf"]
+            for _xp in _xss_pats:
+                if _xp in func_name:
+                    for _arg_idx in range(1, len(call.args)):
+                        _src = self._check_taint(call.args[_arg_idx])
+                        if _src:
+                            self.findings.append(Finding(
+                                category="security", severity=Severity.HIGH,
+                                title="CWE-79: XSS via " + func_name + " with tainted content",
+                                description="HTTP response write function `" + func_name + "` receives tainted data.",
+                                line=getattr(call, "line", 0) or (call.loc[0] if hasattr(call, "loc") and call.loc else 0),
+                                suggestion="Escape untrusted data before writing to response. Use template.HTMLEscapeString().",
+                                rule_id="GO-79", cwe="CWE-79", agent="go-analyzer",
+                                confidence=0.85,
+                                analysis_kind="go-ast-taint",
+                            ))
+                            break
+                    break
+
         self._walk_expr(call.func)
         for arg in call.args:
             self._walk_expr(arg)
@@ -549,7 +637,7 @@ def run_go_analysis(
         return result
 
     try:
-        walker = GoSecurityWalker(filename)
+        walker = GoSecurityWalker(filename, code=code)
         result.findings = walker.walk(gofile)
     except Exception as exc:
         result.parse_error = f"Go analysis error: {exc}"

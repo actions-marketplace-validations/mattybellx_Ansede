@@ -1569,6 +1569,18 @@ def build_parser() -> argparse.ArgumentParser:
         help="Write standalone diagnostics JSON report to FILE (implies --diagnostics).",
     )
     parser.add_argument(
+        "--pr", action="store_true",
+        help=(
+            "Generate a PR-ready markdown document from findings with auto_fix "
+            "strings. Groups patches by file with unified diffs. "
+            "Use --pr-output to write to a file."
+        ),
+    )
+    parser.add_argument(
+        "--pr-output", type=Path, default=None, metavar="FILE",
+        help="Write the PR document to FILE instead of stdout (implies --pr).",
+    )
+    parser.add_argument(
         "--watch", action="store_true",
         help=(
             "Watch scanned paths for file changes and re-scan modified files automatically. "
@@ -3123,6 +3135,28 @@ def _main_impl() -> None:
                 print(msg)
         except Exception as exc:
             print(f"ansede-static: SBOM generation failed: {exc}", file=sys.stderr)
+    # ── PR document generation ──────────────────────────────────────────────
+    want_pr = getattr(args, "pr", False) or getattr(args, "pr_output", None) is not None
+    if want_pr:
+        try:
+            from ansede_static.engine.pr_generator import write_pr_document
+            pr_out: Path | None = getattr(args, "pr_output", None)
+            pr_body = write_pr_document(results, output_path=pr_out, repo_root=workspace_root)
+            if pr_out:
+                msg = f"PR document written to {pr_out}"
+                if console:
+                    console.print(f"[bold green]✓[/bold green] {msg}")
+                else:
+                    print(msg)
+            else:
+                out_bytes = pr_body.encode("utf-8", errors="replace")
+                try:
+                    sys.stdout.buffer.write(out_bytes + b"\n")
+                    sys.stdout.buffer.flush()
+                except AttributeError:
+                    print(pr_body)
+        except Exception as exc:
+            print(f"ansede-static: PR document generation failed: {exc}", file=sys.stderr)
     # ── Interactive Auto-Fix Prompter ─────────────────────────────────────────
     fixable_count = sum(1 for r in results for f in r.findings if f.auto_fix)
     

@@ -175,9 +175,9 @@ TAINT_SINKS: dict[str, _SinkInfo] = {
     "subprocess.getoutput":       ("CWE-78", "OS Command Injection (shell=True implicit)"),
     "subprocess.getstatusoutput": ("CWE-78", "OS Command Injection (shell=True implicit)"),
     "pty.spawn":                  ("CWE-78", "OS Command Injection via pty.spawn()"),
-    # Code Injection — CWE-95
+    # Code Injection — CWE-94/95
     "eval":                       ("CWE-95", "Code Injection via eval()"),
-    "exec":                       ("CWE-95", "Code Injection via exec()"),
+    "exec":                       ("CWE-94", "Code Injection via exec()"),
     "compile":                    ("CWE-95", "Code Injection via compile()"),
     "__import__":                 ("CWE-95", "Dynamic import injection"),
     "importlib.import_module":    ("CWE-95", "Dynamic module import injection"),
@@ -2190,6 +2190,7 @@ _PY_TAINT_RULE_IDS: dict[str, str] = {
     "CWE-89": "PY-004",
     "CWE-78": "PY-005",
     "CWE-95": "PY-006",
+    "CWE-94": "PY-006",
     "CWE-502": "PY-007",
     "CWE-918": "PY-008",
     "CWE-79": "PY-009",
@@ -2704,26 +2705,28 @@ def _rule_05(ctx: _Ctx) -> list[Finding]:
 def _rule_06(ctx: _Ctx) -> list[Finding]:
     findings: list[Finding] = []
     sans = ctx.sans
-    # ── Rule 6: Unsafe deserialization ───────────────────────────────────
+    # ── Rule 6: Unsafe deserialization + code execution ──────────────────
     for lineno, line_text in enumerate(sans, 1):  # use string-blanked lines
         if line_text.strip().startswith("#"):
             continue
-        for pattern, desc in [
-            (r'pickle\.loads?\(', "pickle deserialization"),
-            (r'marshal\.loads?\(', "marshal deserialization"),
-            (r'yaml\.load\((?!.*Loader\s*=\s*(?:yaml\.)?(?:C?SafeLoader))', "yaml.load without SafeLoader"),
+        for pattern, desc, cwe, sev in [
+            (r'pickle\.loads?\(', "pickle deserialization", "CWE-502", Severity.CRITICAL),
+            (r'marshal\.loads?\(', "marshal deserialization", "CWE-502", Severity.CRITICAL),
+            (r'yaml\.load\((?!.*Loader\s*=\s*(?:yaml\.)?(?:C?SafeLoader))', "yaml.load without SafeLoader", "CWE-502", Severity.CRITICAL),
+            (r'\bexec\s*\(', "exec() code execution", "CWE-94", Severity.CRITICAL),
         ]:
             if re.search(pattern, line_text):
+                title = f"{cwe}: Unsafe {desc} at line {lineno}" if "deserialization" in desc else f"{cwe}: Unsafe {desc} at line {lineno}"
                 findings.append(Finding(
-                    category="security", severity=Severity.CRITICAL,
-                    title=f"CWE-502: Unsafe deserialization at line {lineno}",
+                    category="security", severity=sev,
+                    title=title,
                     description=(
                         f"Unsafe {desc} at L{lineno}: `{line_text.strip()[:80]}`. "
-                        f"If the data comes from an untrusted source, an attacker can achieve RCE."
+                        "If the data comes from an untrusted source, this can lead to code execution."
                     ),
                     line=lineno,
-                    suggestion="Use JSON. If pickle is required, verify data integrity with HMAC before loading.",
-                    cwe="CWE-502", agent="python-analyzer",
+                    suggestion="Avoid using this pattern with untrusted data. Use safer alternatives.",
+                    cwe=cwe, agent="python-analyzer",
                 ))
                 break
 
@@ -5516,7 +5519,7 @@ def _rule_29(ctx: _Ctx) -> list[Finding]:
             sink_label_lower = tp.sink_label.lower()
             cwe = next(
                 (v for k, v in _SINK_CWES.items() if k in sink_label_lower),
-                "CWE-89",
+                "CWE-unknown",
             )
             sev = Severity.HIGH
             if cwe in ("CWE-78", "CWE-95", "CWE-502"):
@@ -6179,6 +6182,196 @@ def _rule_46(ctx: _Ctx) -> list[Finding]:
     return findings
 
 
+# ──────────────────────────────────────────────────────────────────────────────
+# P0: Rule 47 — CWE-453: Mutable default argument in function signature
+# ──────────────────────────────────────────────────────────────────────────────
+
+def _rule_47(ctx: _Ctx) -> list[Finding]:
+    """Detect mutable default arguments (x=[], x={}, x=set()) that share state across calls."""
+    findings: list[Finding] = []
+    for fname, fnode in ctx.func_defs.items():
+        for default_node in [*fnode.args.defaults, *fnode.args.kw_defaults]:
+            if default_node is None:
+                continue
+            is_mutable = False
+            mut_type = ""
+            if isinstance(default_node, ast.List):
+                is_mutable = True
+                mut_type = "[] (empty list)"
+            elif isinstance(default_node, ast.Dict):
+                is_mutable = True
+                mut_type = "{} (empty dict)"
+            elif isinstance(default_node, ast.Set):
+                is_mutable = True
+                mut_type = "set()"
+            elif isinstance(default_node, ast.Call):
+                if isinstance(default_node.func, ast.Name):
+                    if default_node.func.id in {"list", "dict", "set", "OrderedDict", "defaultdict"}:
+                        is_mutable = True
+                        mut_type = f"{default_node.func.id}()"
+            if not is_mutable:
+                continue
+            findings.append(Finding(
+                category="bug", severity=Severity.MEDIUM,
+                title=f"CWE-453: Mutable default argument `{mut_type}` in {fname}()",
+                description=(
+                    f"`{fname}()` at L{default_node.lineno} uses `{mut_type}` as a default argument value. "
+                    "This shared mutable object persists across calls — mutations in one call leak to subsequent calls. "
+                    "This is a common source of subtle, hard-to-reproduce bugs."
+                ),
+                line=default_node.lineno,
+                suggestion="Use `None` as default and assign inside the function: `def fn(x=None): if x is None: x = []`",
+                cwe="CWE-453", agent="python-analyzer",
+            ))
+    return _assign_rule_ids(findings, "PY-060")
+
+
+# ──────────────────────────────────────────────────────────────────────────────
+# P0: Rule 48 — CWE-617: Assert used for security check  (disabled in -O mode)
+# ──────────────────────────────────────────────────────────────────────────────
+
+def _rule_48(ctx: _Ctx) -> list[Finding]:
+    """Detect `assert` statements used for security validation — disabled with python -O."""
+    findings: list[Finding] = []
+    # Keywords that suggest a security/intrusion/intent check rather than a debug invariant
+    _SECURITY_ASSERT_RE = re.compile(
+        r'(?:role|permission|auth|login|admin|owner|user_id|'
+        r'is_(?:admin|staff|owner|authenticated|superuser)|'
+        r'has_(?:role|permission|access)|can_(?:edit|delete|admin)|'
+        r'allowed|authorized|is_owner|owns|verify|validate|check|'
+        r'secure|secret|token|session|csrf|access|privilege|scope|'
+        r'not\s+None|is\s+not\s+None)',
+        re.IGNORECASE,
+    )
+    _ASSERT_STMT_RE = re.compile(r'assert\s+', re.IGNORECASE)
+    for fname, fnode in ctx.func_defs.items():
+        # Get function body text for regex search
+        for node in ast.walk(fnode):
+            if not isinstance(node, ast.Assert):
+                continue
+            node_text = ast.unparse(node.test) if hasattr(ast, "unparse") else ""
+            if not node_text:
+                continue
+            # Only flag if the assert condition looks security-related
+            if not _SECURITY_ASSERT_RE.search(node_text):
+                continue
+            findings.append(Finding(
+                category="security", severity=Severity.HIGH,
+                title=f"CWE-617: Security check via `assert` in {fname}() at line {node.lineno}",
+                description=(
+                    f"`{fname}()` uses `assert {node_text[:100]}` at L{node.lineno} for a "
+                    "security-relevant check. Python disables all `assert` statements when "
+                    "running with `-O` (optimized mode). Production deployments often use `-O`."
+                ),
+                line=node.lineno,
+                suggestion="Replace `assert` with an explicit `if` guard that raises an appropriate exception: "
+                           "`if condition: raise PermissionError()`",
+                cwe="CWE-617", agent="python-analyzer",
+            ))
+    return _assign_rule_ids(findings, "PY-061")
+
+
+# ──────────────────────────────────────────────────────────────────────────────
+# P0: Rule 49 — CWE-117: Log injection via f-string/logging with user data
+# ──────────────────────────────────────────────────────────────────────────────
+
+def _rule_49(ctx: _Ctx) -> list[Finding]:
+    """Detect log injection patterns not caught by taint engine — f-string and %-format logging."""
+    findings: list[Finding] = []
+    _LOG_METHODS_RE = re.compile(
+        r'(?:logger|log|logging)\.(?:info|warning|error|debug|critical|warn|exception)\s*\(',
+        re.IGNORECASE,
+    )
+    # Variables that commonly hold user-controlled data
+    _USER_VAR_RE = re.compile(
+        r'\b(?:request|req|input|data|body|payload|'
+        r'user_input|username|email|name|query|search|'
+        r'param|argument|value|content|message|text|url|'
+        r'ip|address|host|agent|referer|cookie|token|'
+        r'headers|form|args|params|session)\b',
+        re.IGNORECASE,
+    )
+    _LOGGED_CONTENT_RE = re.compile(
+        r'f[\"\'].*?\{(\w+)\}.*?[\"\']',
+        re.IGNORECASE,
+    )
+    for fname, fnode in ctx.func_defs.items():
+        # Collect function parameter names that look user-controlled
+        user_params: set[str] = set()
+        for arg in fnode.args.args:
+            if _USER_VAR_RE.search(arg.arg):
+                user_params.add(arg.arg)
+        # Track user-data variable assignments
+        user_vars: set[str] = set(user_params)
+        for node in ast.walk(fnode):
+            if isinstance(node, ast.Assign):
+                for t in node.targets:
+                    if isinstance(t, ast.Name):
+                        if isinstance(node.value, ast.Name) and node.value.id in user_vars:
+                            user_vars.add(t.id)
+
+        for node in ast.walk(fnode):
+            if not isinstance(node, ast.Call):
+                continue
+            call_text = ast.unparse(node) if hasattr(ast, "unparse") else ""
+            if not _LOG_METHODS_RE.search(call_text):
+                continue
+            # Check all args for user-controlled variables
+            has_user_data = False
+            for arg in node.args:
+                for child in ast.walk(arg):
+                    if isinstance(child, ast.Name) and child.id in user_vars:
+                        has_user_data = True
+                        break
+                    if isinstance(child, ast.FormattedValue):
+                        if isinstance(child.value, ast.Name) and child.value.id in user_vars:
+                            has_user_data = True
+                            break
+                if has_user_data:
+                    break
+            if has_user_data:
+                findings.append(Finding(
+                    category="security", severity=Severity.MEDIUM,
+                    title=f"CWE-117: Log injection in {fname}() at line {node.lineno}",
+                    description=(
+                        f"`{fname}()` logs user-controlled data at L{node.lineno}. "
+                        "An attacker can inject fake log entries via CRLF sequences, "
+                        "compromising audit trails and SIEM-based detection."
+                    ),
+                    line=node.lineno,
+                    suggestion="Sanitize: `safe = str(val).replace(chr(10), '').replace(chr(13), '')[:200]`",
+                    cwe="CWE-117", agent="python-analyzer",
+                ))
+
+    # ── Module-level log injection (not inside any function) ─────────────
+    _PCT_LOG_RE = re.compile(
+        r"(?:logger|log|logging)\.(?:info|warning|error|debug|critical|warn|exception)\s*\(\s*[\"'].*?%[srd].*?[\"']\s*,\s*(\w+)",
+        re.IGNORECASE,
+    )
+    for lineno, line in enumerate(ctx.lines, 1):
+        stripped = line.strip()
+        if stripped.startswith("#"):
+            continue
+        m = _PCT_LOG_RE.search(stripped)
+        if m:
+            var_name = m.group(1)
+            # Check it's not a literal constant
+            if not var_name.startswith(("'", '"')) and not var_name.isdigit():
+                findings.append(Finding(
+                    category="security", severity=Severity.MEDIUM,
+                    title=f"CWE-117: Log injection at module level at line {lineno}",
+                    description=(
+                        f"Module-level log call at L{lineno} passes variable `{var_name}` via %-format. "
+                        "An attacker can inject fake log entries via CRLF sequences."
+                    ),
+                    line=lineno,
+                    suggestion="Sanitize: `safe = str(val).replace(chr(10), '').replace(chr(13), '')[:200]`",
+                    cwe="CWE-117", agent="python-analyzer",
+                ))
+
+    return _assign_rule_ids(findings, "PY-062")
+
+
 def _rule_44(ctx: _Ctx) -> list[Finding]:
     """CWE-434: File upload without type/content validation."""
     findings: list[Finding] = []
@@ -6298,7 +6491,7 @@ def _detect(code: str, filename: str = "", global_graph: object = None) -> list[
         _rule_31, _rule_32, _rule_33, _rule_34, _rule_35,
         _rule_36, _rule_37, _rule_38, _rule_39, _rule_40,
         _rule_41, _rule_42, _rule_43, _rule_44, _rule_45,
-        _rule_46,
+        _rule_46, _rule_47, _rule_48, _rule_49,
     ):
         findings.extend(rule_fn(ctx))
 
@@ -6313,7 +6506,8 @@ def _detect(code: str, filename: str = "", global_graph: object = None) -> list[
     try:
         from ansede_static.entropy import scan_for_secrets
         # Only run if the file is not too large (avoid false positives in data files)
-        if len(code) < 500_000:
+        # and not in a vendored dependency directory (Unicode data, minified JS etc.)
+        if len(code) < 500_000 and not _is_vendored_path(filename):
             findings.extend(scan_for_secrets(code, filename))
     except Exception:  # pragma: no cover
         pass
@@ -6478,6 +6672,18 @@ def index_python_file(code: str, filename: str, global_graph):
                             taint_trace=(_make_trace_frame("source", src, line=node.lineno),)
                         )
                         global_graph.add_node(taint_node)
+
+
+# ── Vendored-path guard ─────────────────────────────────────────────────────
+
+
+_VENDOR_RE = re.compile(r'(?:^|[/\\])(?:vendor|_vendor|node_modules|bower_components|third_party)(?:[/\\]|$)')
+
+
+def _is_vendored_path(filename: str) -> bool:
+    """Return True if *filename* is inside a vendored-dependency directory."""
+    return bool(_VENDOR_RE.search(str(filename).replace("\\", "/")))
+
 
 def analyze_python(code: str, filename: str = "", global_graph=None) -> AnalysisResult:
     """
