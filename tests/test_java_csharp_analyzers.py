@@ -413,7 +413,15 @@ def test_java_csharp_go_findings_include_safe_inline_auto_fixes(tmp_path):
     cs_file = tmp_path / "AdminController.cs"
     go_file = tmp_path / "main.go"
     # Use actuator endpoint fixture that AST analyzer detects (GET /admin is not flagged)
-    java_file.write_text(JAVA_ACTUATOR_SNIPPET, encoding="utf-8")
+    # On CI where tree-sitter isn't built, the regex fallback uses JAVA_MISSING_AUTH instead
+    try:
+        from ansede_static.java_analyzer import _AST_AVAILABLE
+    except ImportError:
+        _AST_AVAILABLE = False
+    if _AST_AVAILABLE:
+        java_file.write_text(JAVA_ACTUATOR_SNIPPET, encoding="utf-8")
+    else:
+        java_file.write_text(JAVA_MISSING_AUTH, encoding="utf-8")
     cs_file.write_text(CSHARP_MISSING_AUTH, encoding="utf-8")
     go_file.write_text(GO_MISSING_AUTH, encoding="utf-8")
 
@@ -421,8 +429,9 @@ def test_java_csharp_go_findings_include_safe_inline_auto_fixes(tmp_path):
     cs_result = scan_file(cs_file)
     go_result = scan_file(go_file)
 
-    # Java AST analyzer produces JV-009 (no auto-fix in AST path yet)
-    assert any(f.rule_id == "JV-009" for f in java_result.findings), f"Expected JV-009, got {_rule_ids(java_result)}"
+    # AST produces JV-009, regex fallback produces JV-001
+    expected_java = "JV-009" if _AST_AVAILABLE else "JV-001"
+    assert any(f.rule_id == expected_java for f in java_result.findings), f"Expected {expected_java}, got {_rule_ids(java_result)}"
     cs_fix = next(f.auto_fix for f in cs_result.findings if f.rule_id == "CS-001")
     go_fix = next(f.auto_fix for f in go_result.findings if f.rule_id == "GO-862")
 
@@ -431,10 +440,17 @@ def test_java_csharp_go_findings_include_safe_inline_auto_fixes(tmp_path):
 
 
 def test_apply_fixes_updates_java_csharp_and_go_sources(tmp_path):
+    try:
+        from ansede_static.java_analyzer import _AST_AVAILABLE
+    except ImportError:
+        _AST_AVAILABLE = False
     java_file = tmp_path / "AdminController.java"
     cs_file = tmp_path / "AdminController.cs"
     go_file = tmp_path / "main.go"
-    java_file.write_text(JAVA_ACTUATOR_SNIPPET, encoding="utf-8")
+    if _AST_AVAILABLE:
+        java_file.write_text(JAVA_ACTUATOR_SNIPPET, encoding="utf-8")
+    else:
+        java_file.write_text(JAVA_MISSING_AUTH, encoding="utf-8")
     cs_file.write_text(CSHARP_MISSING_AUTH, encoding="utf-8")
     go_file.write_text(GO_MISSING_AUTH, encoding="utf-8")
 
