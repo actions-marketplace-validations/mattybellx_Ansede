@@ -659,7 +659,7 @@ _HTML_TEMPLATE = """\
         fileSection: fs,
         file: (fileEl?.textContent || '').trim(),
         severity: (sevEl?.textContent || '').trim().toLowerCase(),
-        cwe: (cweText.match(/CWE-\d+/) || [''])[0],
+        cwe: (cweText.match(/CWE-\\d+/) || [''])[0],
         line: parseInt(locEl?.textContent?.replace('L','') || '0', 10),
         confidence: confEl ? parseInt(confEl.style.width || '0', 10) / 100 : 0,
       }});
@@ -721,7 +721,7 @@ _HTML_TEMPLATE = """\
         results: findingsData.filter(d => !d.el.classList.contains('hidden')).map(d => ({{
           ruleId: (d.el.querySelector('.tag:first-child')?.textContent || '').trim(),
           level: d.severity === 'critical' ? 'error' : d.severity === 'high' ? 'error' : d.severity === 'medium' ? 'warning' : 'note',
-          message: {{ text: d.el.querySelector('.finding-title')?.textContent?.replace(/\s*—\s*CWE-\d+$/, '') || 'Finding' }},
+          message: {{ text: d.el.querySelector('.finding-title')?.textContent?.replace(/\\s*—\\s*CWE-\\d+$/, '') || 'Finding' }},
           locations: [{{
             physicalLocation: {{
               artifactLocation: {{ uri: d.file, uriBaseId: '%SRCROOT%' }},
