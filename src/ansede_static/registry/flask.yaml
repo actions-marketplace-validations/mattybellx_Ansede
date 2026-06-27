@@ -9,10 +9,18 @@ rules:
     severity: critical
     pattern_type: taint_sink
     sinks:
-      - db.engine.execute(
-      - db.session.execute(
-      - engine.execute(
-      - connection.execute(
+      - db.engine.execute("
+      - db.engine.execute('
+      - db.engine.execute(f"
+      - db.engine.execute(f'
+      - db.session.execute("
+      - db.session.execute('
+      - db.session.execute(f"
+      - db.session.execute(f'
+      - engine.execute("
+      - engine.execute('
+      - connection.execute("
+      - connection.execute('
     suggestion: "Use SQLAlchemy parameterized text('SQL :param', {'param': val})"
 
   - id: registry/flask/sqli/cursor-raw

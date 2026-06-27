@@ -661,7 +661,7 @@ def _check_path_traversal(
         # `open` / `openSync` match XMLHttpRequest.open(), modals.open(),
         # window.open(), etc. — none of which are filesystem operations.
         # Only flag these when we can confirm they are fs operations.
-        if short in {"open", "openSync"}:
+        if short in {"open", "openSync", "resolve", "join"}:
             if not is_fs_callee(call.callee, code=code):
                 continue
 

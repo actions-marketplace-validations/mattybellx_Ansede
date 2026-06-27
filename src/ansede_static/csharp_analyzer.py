@@ -514,17 +514,108 @@ def analyze_csharp(source: str, filename: str = "<input>") -> AnalysisResult:
             re.IGNORECASE,
         )
         if _CMD_INJECTION_CS_RE.search(method.body):
+            # Classify the data source to avoid false positives from:
+            #   - Hardcoded string literals (no risk)
+            #   - Config/appsettings properties (low risk)
+            #   - Delegating wrappers (risk at caller site)
+            #   - Argument escaping (mitigated)
+            _body = method.body
+            _match = _CMD_INJECTION_CS_RE.search(_body)
+            _matched_line = _body[_match.start() if _match else 0:_match.end() if _match else 0]
+
+            # Determine classification flags
+            _is_hardcoded = False
+            _is_config_prop = False
+            _is_delegating = False
+            _has_escaping = False
+
+            # 1. Check for hardcoded string literal FileName
+            #    Pattern: FileName = "..." or FileName = @"..." in ProcessStartInfo
+            if re.search(
+                r'FileName\s*=\s*@"[^"]*"|FileName\s*=\s*"[^"]*"',
+                _body, re.IGNORECASE,
+            ):
+                _is_hardcoded = True
+
+            # 2. Check for config property FileName
+            #    Pattern: _appConfig.X, AppConfig.X, Config.X, config["key"]
+            if re.search(
+                r'FileName\s*=\s*(?:this\.)?_?[A-Za-z]+[Cc]onfig(?:uration)?\s*\.\s*\w+|'
+                r'config\s*\["|AppConfig\.\w+|Constants\.\w+',
+                _body, re.IGNORECASE,
+            ):
+                _is_config_prop = True
+
+            # 3. Check for delegating wrapper (thin delegation only)
+            #    Patterns: return Process.Start(psi) | _process.Start() | return _process.Start()
+            _stripped = _body.strip()
+            _thin_delegation = re.search(
+                r'\b(?:return\s+)?_?process\.Start\s*\([^)]*\)\s*;?\s*$',
+                _stripped, re.IGNORECASE,
+            )
+            if _thin_delegation:
+                _is_delegating = True
+
+            # 4. Check for argument escaping/quoting functions
+            if re.search(
+                r'(?:Helper|ProcessHelper|ArgHelper|Quote|EscapeArgs|EscapeArguments)\s*\(',
+                _body,
+            ):
+                _has_escaping = True
+
+            # Compute adjusted severity and confidence
+            if _is_hardcoded and not _has_escaping:
+                # Hardcoded path + no escaping needed = safe config launch
+                continue  # skip entirely — hardcoded Process.Start is not a vulnerability
+            elif _is_delegating and not _is_config_prop:
+                # Pure delegating wrapper — skip (report at the callsite where ProcessStartInfo is built)
+                continue
+
+            _severity = Severity.HIGH if _is_config_prop else Severity.CRITICAL
+            _confidence = 0.92
+            _severity_str = "CRITICAL"
+            _desc_suffix = ""
+
+            if _is_config_prop:
+                _severity = Severity.MEDIUM
+                _confidence = 0.55
+                _severity_str = "MEDIUM"
+                _desc_suffix = " The executable path comes from application configuration, not direct user input, which reduces exploitability."
+            elif _has_escaping:
+                _severity = Severity.HIGH
+                _confidence = 0.70
+                _severity_str = "HIGH"
+                _desc_suffix = " Arguments are passed through a quoting/escaping function which partially mitigates injection risk."
+
+            # Auth-scope calibration: if the method is behind [Authorize], the finding
+            # requires auth to exploit. Reduce severity one level since the auth key
+            # may already grant equivalent capabilities (see loop.md §4.3).
+            if _has_auth(method) and _severity in (Severity.CRITICAL, Severity.HIGH):
+                _auth_reduction = {
+                    Severity.CRITICAL: (Severity.HIGH, "HIGH"),
+                    Severity.HIGH: (Severity.MEDIUM, "MEDIUM"),
+                }
+                _new_sev, _new_str = _auth_reduction[_severity]
+                _severity = _new_sev
+                _severity_str = _new_str
+                _desc_suffix += " Finding requires authentication ([Authorize]) which limits the attack surface — the auth key may already grant access to similar capabilities."
+                _confidence = max(0.40, _confidence - 0.15)
+
             findings.append(Finding(
                 category="security",
-                severity=Severity.CRITICAL,
-                title=f"CWE-78: OS command injection in `{method.name}()`",
-                description="Process.Start or ProcessStartInfo is used. If the command or arguments are derived from user input this allows arbitrary command execution.",
+                severity=_severity,
+                title=f"CWE-78: OS command injection in `{method.name}()` [{_severity_str}]",
+                description=(
+                    "Process.Start or ProcessStartInfo is used. If the command or arguments "
+                    "are derived from user input this allows arbitrary command execution."
+                    + _desc_suffix
+                ),
                 line=_first_matching_line(method.body, _CMD_INJECTION_CS_RE, method.start_line),
                 suggestion="Avoid passing user input directly to Process.Start. Use argument arrays and validate the executable name against an allowlist.",
                 rule_id="CS-010",
                 cwe="CWE-78",
                 agent="csharp-analyzer",
-                confidence=0.92,
+                confidence=_confidence,
                 analysis_kind="pattern",
             ))
 

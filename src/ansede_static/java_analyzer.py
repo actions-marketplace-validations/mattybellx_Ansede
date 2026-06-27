@@ -2,19 +2,29 @@
 java_analyzer.py — Ansede Static Java detection engine.
 
 PERFORMANCE CONTRACT:
-  Analysis is bounded structural heuristics over regex-identified method blocks.
-  No full grammar parse tree is constructed. Method boundary detection is O(n)
-  in line count. Annotation context lookup is O(k) where k = annotation lines
-  above a method (bounded to 10). Total complexity: O(n) per file.
+  Primary analysis uses tree-sitter AST (java_ast_analyzer) for accurate
+  method extraction, taint tracking, and call-graph construction.
+  Falls back to regex structural heuristics when tree-sitter is unavailable.
+  Total complexity: O(n) per file for regex path, O(n log n) for AST path.
   Worst-case measured against a 10k-line Spring Boot controller: < 400ms.
-  This stays well within the 10s/100kLOC budget.
 """
 from __future__ import annotations
 
 from dataclasses import dataclass
+import logging
 import re
 
 from ansede_static._types import AnalysisResult, Finding, Severity
+
+_log = logging.getLogger(__name__)
+
+# Attempt tree-sitter AST import (optional — falls back to regex)
+_AST_AVAILABLE = False
+try:
+    from ansede_static.java_ast_analyzer import analyze_java_ast  # noqa: F811
+    _AST_AVAILABLE = True
+except ImportError:
+    _log.debug("java_ast_analyzer not available — using regex fallback")
 
 
 _ROUTE_ANNOTATIONS = {
@@ -454,6 +464,16 @@ def analyze_java(
     use_javac: bool = False,
     global_graph: object | None = None,
 ) -> AnalysisResult:
+    # ── Tree-sitter AST path (primary) ───────────────────────────────
+    if _AST_AVAILABLE:
+        try:
+            ast_result = analyze_java_ast(source, filename)
+            ast_result.lines_scanned = len(source.splitlines())
+            return ast_result
+        except Exception:
+            _log.debug("AST analysis failed for %r — falling back to regex", filename, exc_info=True)
+
+    # ── Regex structural path (fallback) ─────────────────────────────
     result = AnalysisResult(file_path=filename, language="java")
     lines = source.splitlines()
     result.lines_scanned = len(lines)

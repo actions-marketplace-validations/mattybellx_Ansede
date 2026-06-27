@@ -28,6 +28,10 @@ _PH_PATH_TRAV  = "PHP-004"
 _PH_MISSING_AUTH = "PHP-005"
 _PH_CSRF       = "PHP-006"
 _PH_HARDCODED  = "PHP-007"
+_PH_EVAL       = "PHP-008"  # Code Injection via eval/assert
+_PH_SSRF       = "PHP-009"  # Server-Side Request Forgery
+_PH_UNSERIALIZE = "PHP-010" # Unsafe Deserialization
+_PH_LOG_INJ    = "PHP-011"  # Log Injection
 
 # ── Common taint sources (PHP superglobals) ───────────────────────────────────
 _SUPERGLOBALS = [
@@ -122,6 +126,38 @@ _SKIP_URL_PARAM_RE = re.compile(r'://|access_token=|api_key=|secret=')
 #    and the left side is a class constant (uppercase) or the value is identical to the key.
 _SKIP_IDENTIFIER_RE = re.compile(
     r'(?:INVALID_|CANNOT_|MODEL_)[A-Z_]+?\s*=\s*["\'][A-Za-z_][A-Za-z0-9_]*["\']',
+)
+
+# ── CWE-95: Code Injection via eval/assert ────────────────────────────────────
+_EVAL_RE = re.compile(
+    r'(?:eval|assert|preg_replace)\s*\([^)]*' + _TAINT_PAT,
+    re.IGNORECASE,
+)
+_CREATE_FUNC_RE = re.compile(
+    r'create_function\s*\(\s*["\'][^"\']*["\']\s*,\s*["\'][^"\']*' + _TAINT_PAT,
+    re.IGNORECASE,
+)
+
+# ── CWE-918: SSRF ────────────────────────────────────────────────────────────
+_SSRF_CURL_RE = re.compile(
+    r'curl_exec\s*\(\s*[^)]*' + _TAINT_PAT,
+    re.IGNORECASE,
+)
+_SSRF_FILE_GET_RE = re.compile(
+    r'(?:file_get_contents|fgets|fread|readfile)\s*\(\s*[^)]*' + _TAINT_PAT,
+    re.IGNORECASE,
+)
+
+# ── CWE-502: Unsafe Deserialization ──────────────────────────────────────────
+_UNSERIALIZE_RE = re.compile(
+    r'unserialize\s*\(\s*[^)]*' + _TAINT_PAT,
+    re.IGNORECASE,
+)
+
+# ── CWE-117: Log Injection ───────────────────────────────────────────────────
+_LOG_INJ_RE = re.compile(
+    r'(?:error_log|syslog|trigger_error)\s*\(\s*[^)]*' + _TAINT_PAT,
+    re.IGNORECASE,
 )
 
 
@@ -246,6 +282,51 @@ def _scan_with_regex(code: str, findings: list[Finding]) -> None:
                      Severity.HIGH, m,
                      "Store secrets in environment variables (e.g., `$_ENV['DB_PASSWORD']`) "
                      "or a secrets manager. Never commit credentials to version control.",
+                     confidence=0.60)
+
+    # ── CWE-95: Code Injection via eval ──────────────────────────────────────
+    for m in _EVAL_RE.finditer(code):
+        _add_finding(_PH_EVAL, "Code Injection via eval/assert with user input", "CWE-95",
+                     Severity.CRITICAL, m,
+                     "Never pass user input to eval() or assert(). Use safer alternatives "
+                     "like switch/case or a lookup table.",
+                     confidence=0.85)
+
+    for m in _CREATE_FUNC_RE.finditer(code):
+        _add_finding(_PH_EVAL, "Code Injection via create_function with user input", "CWE-95",
+                     Severity.CRITICAL, m,
+                     "create_function() is deprecated and vulnerable to code injection. "
+                     "Use anonymous functions instead.",
+                     confidence=0.85)
+
+    # ── CWE-918: SSRF ────────────────────────────────────────────────────────
+    for m in _SSRF_CURL_RE.finditer(code):
+        _add_finding(_PH_SSRF, "Server-Side Request Forgery via curl_exec", "CWE-918",
+                     Severity.HIGH, m,
+                     "Validate and allowlist URLs passed to curl. Block private IP ranges "
+                     "(127.0.0.0/8, 10.0.0.0/8, 172.16.0.0/12, 192.168.0.0/16).",
+                     confidence=0.70)
+
+    for m in _SSRF_FILE_GET_RE.finditer(code):
+        _add_finding(_PH_SSRF, "Server-Side Request Forgery via file_get_contents", "CWE-918",
+                     Severity.HIGH, m,
+                     "Validate URLs passed to file_get_contents. It can fetch remote URLs "
+                     "when allow_url_fopen is enabled.",
+                     confidence=0.65)
+
+    # ── CWE-502: Unsafe Deserialization ──────────────────────────────────────
+    for m in _UNSERIALIZE_RE.finditer(code):
+        _add_finding(_PH_UNSERIALIZE, "Unsafe deserialization via unserialize()", "CWE-502",
+                     Severity.CRITICAL, m,
+                     "Never call unserialize() on user-supplied data. Use json_decode() "
+                     "with an explicit schema, or use a safe deserialization library.",
+                     confidence=0.85)
+
+    # ── CWE-117: Log Injection ───────────────────────────────────────────────
+    for m in _LOG_INJ_RE.finditer(code):
+        _add_finding(_PH_LOG_INJ, "Log Injection via error_log with user data", "CWE-117",
+                     Severity.MEDIUM, m,
+                     "Sanitize user input before logging: strip CRLF characters.",
                      confidence=0.60)
 
 

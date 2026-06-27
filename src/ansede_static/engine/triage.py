@@ -104,6 +104,29 @@ def apply_active_suppressions(
     ]
 
 
+def reduce_confidence_for_traced_sanitizer(
+    findings: list[Finding],
+) -> list[Finding]:
+    """Post-process: reduce confidence on CWE-22 findings where the taint trace
+    mentions a known path-sanitizer function (e.g. resolve_path_within_directory).
+    This catches cases where the taint engine traced *through* a sanitizer
+    function but the sanitizer status didn't propagate via func_summaries.
+    """
+    _SANITIZER_TRACE_RE = re.compile(
+        r"(?:resolve_path_within_directory|_resolve_path_within_directory|"
+        r"file_security\.resolve_path_within_directory|os\.path\.realpath|"
+        r"os\.path\.commonpath|Path\.resolve|os\.path\.abspath|secure_filename)",
+        re.IGNORECASE,
+    )
+    for finding in findings:
+        if finding.cwe != "CWE-22" or finding.confidence < 0.5:
+            continue
+        trace_text = " ".join(f"{tf.label} {tf.kind}" for tf in finding.trace)
+        if _SANITIZER_TRACE_RE.search(f"{finding.title} {finding.description} {trace_text}"):
+            finding.confidence = max(0.30, finding.confidence * 0.4)
+    return findings
+
+
 @dataclass
 class TriageResult:
     """Result of triage analysis for a finding."""
@@ -120,17 +143,38 @@ class ContextAnalyzer:
     TEST_PATTERNS = [
         'test_', '_test', '_spec', 'spec_', 'conftest.', '.test.', '.spec.',
         'tests/', '/tests', 'test_suite', 'unit_test', 'integration_test',
-        '__tests__', '.test.', '.spec.'
+        '__tests__', '.test.', '.spec.',
+        # Directory-based patterns (forward + backslash for Windows)
+        '/test/', '\\test\\', '/tests/', '\\tests\\',
+        '/e2e/', '\\e2e\\',
+        '/spec/', '\\spec\\', '/cypress/', '\\cypress\\',
+        '/playwright/', '\\playwright\\',
     ]
 
     MOCK_PATTERNS = [
         'mock_', '_mock', 'fixtures/', '/fixtures', 'fixture', 'fake_', '_fake',
-        'stub', 'stubs/', '/stubs', '.fixtures', '__fixtures__'
+        'stub', 'stubs/', '/stubs', '.fixtures', '__fixtures__',
+        # Example / demo / doc directories (non-production code)
+        '/examples/', '\\examples\\', '/example/', '\\example\\',
+        '/demo/', '\\demo\\', '/docs/', '\\docs\\',
+        '/documentation/', '\\documentation\\', '/tutorial/', '\\tutorial\\',
+        '/samples/', '\\samples\\', '/sample/', '\\sample\\',
     ]
 
     GENERATED_PATTERNS = [
         '.d.ts', '.gen.', '.generated.', '.auto.', 'dist/', 'build/', '__pycache__',
         'node_modules/', '.venv/', 'venv/', '/dist', '/build', '.next/', '.nuxt/'
+    ]
+
+    FRAMEWORK_INTERNAL_PATTERNS = [
+        # Paths that indicate framework/library source code (not user endpoints)
+        '/src/flask/', '\\src\\flask\\',
+        '/src/django/', '\\src\\django\\',
+        '/packages/', '\\packages\\',
+        # Framework lib directories (matches e.g. p_express/lib/, express/lib/, etc.)
+        'express/lib/', 'express\\lib\\',
+        'flask/src/', 'flask\\src\\',
+        'django/django/', 'django\\django\\',
     ]
 
     @staticmethod
@@ -203,6 +247,15 @@ class ContextAnalyzer:
         # Check for code generation markers in content
         return False, ""
 
+    @staticmethod
+    def is_framework_internal(file_path: str) -> tuple[bool, str]:
+        """Determine if file is framework/library internal code (not user endpoints)."""
+        path_lower = file_path.lower()
+        for pattern in ContextAnalyzer.FRAMEWORK_INTERNAL_PATTERNS:
+            if pattern in path_lower:
+                return True, f"Framework internal pattern '{pattern}'"
+        return False, ""
+
 
 class SafePatternDetector:
     """Detect safe patterns that indicate a finding is not exploitable."""
@@ -220,7 +273,7 @@ class SafePatternDetector:
 
     # Path Traversal patterns
     PATH_NORMALIZATION_RE = re.compile(
-        r'(?:realpath|abspath|normpath|resolve)\s*\(',
+        r'(?:realpath|abspath|normpath|resolve|resolve_path_within_directory|commonpath)\s*\(',
         re.IGNORECASE
     )
     PATH_STARTSWITH_RE = re.compile(
@@ -315,6 +368,44 @@ class SafePatternDetector:
         if SafePatternDetector.SHELL_FALSE_RE.search(snippet):
             return True, "shell=False specified"
 
+        return False, ""
+
+    # ── C# Process.Start safe patterns ────────────────────────────────────
+    CS_HARDCODED_FILENAME_RE = re.compile(
+        r'FileName\s*=\s*(?:@"[^"]*"|"[^"]*")',
+        re.IGNORECASE,
+    )
+    CS_CONFIG_FILENAME_RE = re.compile(
+        r'FileName\s*=\s*(?:this\.)?_?[A-Za-z]+[Cc]onfig(?:uration)?\s*\.\s*\w+|'
+        r'FileName\s*=\s*config\s*\[|'
+        r'FileName\s*=\s*(?:App|Core)Config\.\w+|'
+        r'FileName\s*=\s*Constants\.\w+',
+        re.IGNORECASE,
+    )
+    CS_DELEGATING_WRAPPER_RE = re.compile(
+        r'\b(?:return\s+)?_?process\.Start\s*\([^)]*\)\s*;?\s*$',
+        re.IGNORECASE,
+    )
+    CS_ARG_ESCAPING_RE = re.compile(
+        r'(?:Helper|ProcessHelper|ArgHelper|Quote|EscapeArgs|EscapeArguments)\s*\(',
+    )
+
+    @staticmethod
+    def detect_csharp_safe_process_start(method_body: str) -> tuple[bool, str]:
+        """Detect if a C# Process.Start call is safe or low-risk.
+
+        Returns (is_safe, reason) where is_safe=True means the finding
+        can be suppressed or should have reduced severity.
+        """
+        if SafePatternDetector.CS_HARDCODED_FILENAME_RE.search(method_body):
+            return True, "FileName is a hardcoded string literal"
+        if SafePatternDetector.CS_CONFIG_FILENAME_RE.search(method_body):
+            return True, "FileName comes from application configuration"
+        body_stripped = method_body.strip()
+        if SafePatternDetector.CS_DELEGATING_WRAPPER_RE.search(body_stripped):
+            return True, "Thin delegating wrapper around Process.Start"
+        if SafePatternDetector.CS_ARG_ESCAPING_RE.search(method_body):
+            return True, "Arguments are escaped via quoting function"
         return False, ""
 
     @staticmethod

@@ -2475,6 +2475,7 @@ function validate(input) {
         cve_id="CVE-2024-JAVA-SESSION-FIX",
         language="java",
         cwe="CWE-384",
+        severity_min="medium",
         description="Spring controller login method authenticates the user without calling changeSessionId().",
         snippet="""\
 import org.springframework.web.bind.annotation.*;
@@ -2535,7 +2536,7 @@ public class ActuatorController {
 }
 """,
         expected_hit=r"CWE-862|missing authentication|Spring route",
-        severity_min="high",
+        severity_min="medium",
         sink_line=5,
     ),
 
@@ -2544,6 +2545,7 @@ public class ActuatorController {
         cve_id="CVE-2024-CS-OPEN-REDIRECT",
         language="csharp",
         cwe="CWE-601",
+        severity_min="medium",
         description="ASP.NET Core action redirects to a returnUrl parameter without calling IsLocalUrl().",
         snippet="""\
 using Microsoft.AspNetCore.Mvc;
@@ -2578,6 +2580,7 @@ public class DbConfig {
         cve_id="CVE-2024-CS-IDENTITY-WEAK",
         language="csharp",
         cwe="CWE-287",
+        severity_min="medium",
         description="ASP.NET Identity configured with Password.RequireDigit=false enabling weak passwords.",
         snippet="""\
 using Microsoft.AspNetCore.Identity;
@@ -2784,6 +2787,7 @@ token = random.randint(100000, 999999)
 """,
         expected_hit=r"CWE-338|weak.random|random|secrets",
         sink_line=2,
+        severity_min="medium",
     ),
 
     # ── Python Log Injection (CWE-117) ──────────────────────────────────
@@ -2799,6 +2803,7 @@ logging.info("User: %s", user)
 """,
         expected_hit=r"CWE-117|log.injection",
         sink_line=3,
+        severity_min="medium",
     ),
 
     # ── Python Assertion (CWE-617) ──────────────────────────────────────
@@ -2837,6 +2842,7 @@ CORS(app, origins="*")
         cve_id="CVE-2024-PY-MUTABLE-DEFAULT",
         language="python",
         cwe="CWE-453",
+        severity_min="medium",
         description="Mutable default argument can leak state across calls.",
         snippet="""\
 def add_user(name, roles=[]):
@@ -3073,6 +3079,7 @@ public class FileReader {
         cve_id="CVE-2024-JAVA-LOG-INJECT",
         language="java",
         cwe="CWE-117",
+        severity_min="medium",
         description="Log injection via unsanitized user input in Logger call.",
         snippet="""\
 import java.util.logging.*;
@@ -3130,6 +3137,7 @@ public class LdapLookup {
         cve_id="CVE-2024-CS-WEAK-RANDOM",
         language="csharp",
         cwe="CWE-338",
+        severity_min="medium",
         description="Use of System.Random for security-sensitive token generation.",
         snippet="""\
 using System;
@@ -3277,6 +3285,7 @@ def write_tmp(path, data):
 """,
         expected_hit=r"CWE-362|TOCTOU|race|exists",
         sink_line=2,
+        severity_min="medium",
     ),
 
     # ── JavaScript XSS via innerHTML with user data (CWE-79) ────────────

@@ -1142,6 +1142,20 @@ def _postprocess_guarded_rescan_results(
             suppression_config_path = candidate
         processed = run_ai_triage(processed, code_map, suppression_config_path=suppression_config_path)
 
+    # Post-process CWE-22 findings whose taint trace mentions a known
+    # path-sanitizer (e.g. resolve_path_within_directory). The taint
+    # engine traced through the sanitizer but func_summaries don't
+    # propagate sanitizer status — so we reduce confidence here instead.
+    from ansede_static.engine.triage import reduce_confidence_for_traced_sanitizer
+    for ar in processed:
+        ar.findings = reduce_confidence_for_traced_sanitizer(ar.findings)
+
+    # Entry-point triage: reduce confidence on findings not reachable
+    # from any HTTP route handler. This eliminates noise from internal
+    # utility functions that an attacker can't trigger.
+    from ansede_static.engine.entry_points import apply_entry_point_triage
+    processed = apply_entry_point_triage(processed)
+
     return processed
 
 
@@ -2660,16 +2674,37 @@ def _main_impl() -> None:
     results = apply_config_to_results(results, config)
 
     # ── Context-aware triage: downgrade confidence for test/mock/generated files ─
+    _TEST_NOISE_CWES: frozenset[str] = frozenset({
+        "CWE-862", "CWE-352", "CWE-209", "CWE-1004", "CWE-307",
+        "CWE-614", "CWE-693", "CWE-798", "CWE-79", "CWE-113",
+        "CWE-362", "CWE-400", "CWE-89", "CWE-22", "CWE-95",
+        "CWE-918", "CWE-1321", "CWE-78", "CWE-98",
+        # Flask/example/doc noise
+        "CWE-306", "CWE-319", "CWE-617", "CWE-200", "CWE-284",
+        # SSTI/eval/complexity in tests
+        "CWE-94", "CWE-1188", "CWE-1120", "CWE-1336",
+        # Redirect/session/upload/config in examples
+        "CWE-601", "CWE-384", "CWE-434", "CWE-613",
+        "CWE-312", "CWE-287", "CWE-639", "CWE-328",
+        "CWE-1333", "CWE-915", "CWE-117", "CWE-285",
+        "CWE-215", "CWE-295", "CWE-532", "CWE-502",
+    })
     try:
         from ansede_static.engine.triage import ContextAnalyzer
         _downgraded = 0
+        _filtered = 0
         for _r in results:
             _new_findings = []
             for _f in _r.findings:
                 _is_test, _ = ContextAnalyzer.is_test_context(_r.file_path, "")
                 _is_mock, _ = ContextAnalyzer.is_mock_context(_r.file_path, "")
                 _is_gen, _ = ContextAnalyzer.is_generated(_r.file_path)
-                if _is_test or _is_mock or _is_gen:
+                _is_fw, _ = ContextAnalyzer.is_framework_internal(_r.file_path)
+                if _is_test or _is_mock or _is_gen or _is_fw:
+                    # Known test-file-noise CWEs: drop entirely
+                    if _f.cwe in _TEST_NOISE_CWES:
+                        _filtered += 1
+                        continue
                     _downgraded += 1
                     _f = Finding(
                         category=_f.category,
@@ -2739,6 +2774,10 @@ def _main_impl() -> None:
         if candidate.exists():
             suppression_config_path = candidate
         results = run_ai_triage(results, code_map, suppression_config_path=suppression_config_path)
+
+        # Entry-point triage for the stdin/batch path
+        from ansede_static.engine.entry_points import apply_entry_point_triage
+        results = apply_entry_point_triage(results)
 
     # ── Offline Heuristic Auto-Remediation Engine (Explanations + snippets) ──
     from ansede_static.engine.explain import get_explanation

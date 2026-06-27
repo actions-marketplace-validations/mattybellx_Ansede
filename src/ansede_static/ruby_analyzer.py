@@ -39,6 +39,11 @@ _RB_HARDCODED  = "RB-007"
 _RB_MISSING_AUTH = "RB-008"
 _RB_MASS_ASSIGN = "RB-009"
 _RB_CSRF       = "RB-010"
+_RB_SSRF       = "RB-011"  # Server-Side Request Forgery
+_RB_CODE_INJ   = "RB-012"  # Code Injection (eval)
+_RB_LOG_INJ    = "RB-013"  # Log Injection
+_RB_XSS        = "RB-014"  # Cross-Site Scripting (Rails views)
+_RB_SSTI       = "RB-015"  # Server-Side Template Injection
 
 # ── Shared taint sources ───────────────────────────────────────────────────────
 # Matches common user-controlled value patterns inside Ruby string interpolation
@@ -142,6 +147,48 @@ _PERMIT_BANG_RE = re.compile(
 )
 _PERMIT_BANG_LINE_RE = re.compile(
     r'params(?:\[:[^\]]+\])?\s*\.\s*permit!',
+)
+
+# ── CWE-918: SSRF ────────────────────────────────────────────────────────────
+_SSRF_HTTP_RE = re.compile(
+    r'(?:Net::HTTP|HTTP\.get|HTTP\.post|HTTP\.put|HTTP\.delete|open[_-]uri)\s*\('
+    r'[^)]*' + _TAINT_PAT,
+    re.IGNORECASE,
+)
+_SSRF_OPEN_RE = re.compile(
+    r'\bopen\s*\(\s*(?:params\[|request\.|cookies\[|session\[)',
+    re.IGNORECASE,
+)
+
+# ── CWE-95: Code Injection ───────────────────────────────────────────────────
+_CODE_INJ_RE = re.compile(
+    r'(?:eval|instance_eval|class_eval|module_eval)\s*\('
+    r'[^)]*' + _TAINT_PAT,
+    re.IGNORECASE,
+)
+
+# ── CWE-117: Log Injection ───────────────────────────────────────────────────
+_LOG_INJ_RE = re.compile(
+    r'(?:logger|Rails\.logger|log)\s*\.\s*(?:info|debug|warn|error|fatal)\s*\('
+    r'[^)]*' + _TAINT_PAT,
+    re.IGNORECASE,
+)
+
+# ── CWE-79: XSS via raw/html_safe ────────────────────────────────────────────
+_XSS_RAW_RE = re.compile(
+    r'(?:raw|html_safe)\s*(?:\(|\s)',
+)
+# Rails view templates using raw with interpolation containing user data
+_XSS_RAW_TAINT_RE = re.compile(
+    r'raw\s*\([^)]*' + _TAINT_PAT,
+    re.IGNORECASE,
+)
+
+# ── CWE-1336: SSTI ───────────────────────────────────────────────────────────
+_SSTI_RE = re.compile(
+    r'(?:render\s+(?:inline|text|plain)|ERB\.new|ERB\.render)\s*\('
+    r'[^)]*' + _TAINT_PAT,
+    re.IGNORECASE,
 )
 
 
@@ -426,6 +473,96 @@ def _detect_mass_assignment(source: str) -> list[Finding]:
     return findings
 
 
+# ── CWE-918: SSRF ────────────────────────────────────────────────────────────
+def _detect_ssrf(source: str) -> list[Finding]:
+    findings: list[Finding] = []
+    for lineno, line in _iter_lines(source):
+        if _SSRF_HTTP_RE.search(line) or _SSRF_OPEN_RE.search(line):
+            findings.append(_make_finding(
+                rule_id=_RB_SSRF,
+                cwe="CWE-918",
+                severity=Severity.HIGH,
+                title="Server-Side Request Forgery via user-controlled URL",
+                description="User-controlled data flows to an HTTP request. An attacker can make the server send requests to internal hosts.",
+                suggestion="Validate and allowlist URLs. Block private IP ranges (127.0.0.0/8, 10.0.0.0/8, 172.16.0.0/12, 192.168.0.0/16).",
+                line=lineno,
+                triggering_code=line,
+            ))
+    return findings
+
+
+# ── CWE-95: Code Injection ───────────────────────────────────────────────────
+def _detect_code_injection(source: str) -> list[Finding]:
+    findings: list[Finding] = []
+    for lineno, line in _iter_lines(source):
+        if _CODE_INJ_RE.search(line):
+            findings.append(_make_finding(
+                rule_id=_RB_CODE_INJ,
+                cwe="CWE-95",
+                severity=Severity.CRITICAL,
+                title="Code Injection via eval with user input",
+                description="User-controlled data is evaluated as Ruby code. This allows arbitrary code execution.",
+                suggestion="Never pass user input to eval/instance_eval. Use safe alternatives like public_send or a case statement.",
+                line=lineno,
+                triggering_code=line,
+            ))
+    return findings
+
+
+# ── CWE-117: Log Injection ───────────────────────────────────────────────────
+def _detect_log_injection(source: str) -> list[Finding]:
+    findings: list[Finding] = []
+    for lineno, line in _iter_lines(source):
+        if _LOG_INJ_RE.search(line):
+            findings.append(_make_finding(
+                rule_id=_RB_LOG_INJ,
+                cwe="CWE-117",
+                severity=Severity.MEDIUM,
+                title="Log Injection via logger with user data",
+                description="User-controlled data passed to logger. CRLF sequences can forge log entries.",
+                suggestion="Sanitize user input before logging: strip CRLF characters or limit to alphanumeric.",
+                line=lineno,
+                triggering_code=line,
+            ))
+    return findings
+
+
+# ── CWE-79: XSS in Rails views ───────────────────────────────────────────────
+def _detect_xss(source: str) -> list[Finding]:
+    findings: list[Finding] = []
+    for lineno, line in _iter_lines(source):
+        if _XSS_RAW_TAINT_RE.search(line):
+            findings.append(_make_finding(
+                rule_id=_RB_XSS,
+                cwe="CWE-79",
+                severity=Severity.HIGH,
+                title="XSS via raw/html_safe with user data",
+                description="User-controlled data is marked as HTML-safe. Without sanitization, this allows cross-site scripting.",
+                suggestion="Use sanitize() helper instead of raw/html_safe for user content. Auto-escaping in ERB is bypassed by raw.",
+                line=lineno,
+                triggering_code=line,
+            ))
+    return findings
+
+
+# ── CWE-1336: SSTI ───────────────────────────────────────────────────────────
+def _detect_ssti(source: str) -> list[Finding]:
+    findings: list[Finding] = []
+    for lineno, line in _iter_lines(source):
+        if _SSTI_RE.search(line):
+            findings.append(_make_finding(
+                rule_id=_RB_SSTI,
+                cwe="CWE-1336",
+                severity=Severity.CRITICAL,
+                title="Server-Side Template Injection via render inline with user data",
+                description="User-controlled data is passed to inline template rendering. This allows code execution in the template engine.",
+                suggestion="Never use render inline/text with user input. Use static template files with parameterized content.",
+                line=lineno,
+                triggering_code=line,
+            ))
+    return findings
+
+
 # ── Public API ────────────────────────────────────────────────────────────────
 
 def analyze_ruby(code: str, filename: str = "") -> AnalysisResult:
@@ -455,6 +592,11 @@ def analyze_ruby(code: str, filename: str = "") -> AnalysisResult:
         all_findings.extend(_detect_hardcoded_secrets(code))
         all_findings.extend(_detect_missing_auth(code))
         all_findings.extend(_detect_mass_assignment(code))
+        all_findings.extend(_detect_ssrf(code))
+        all_findings.extend(_detect_code_injection(code))
+        all_findings.extend(_detect_log_injection(code))
+        all_findings.extend(_detect_xss(code))
+        all_findings.extend(_detect_ssti(code))
         # Enrich missing-auth findings with Ripper structural parsing
         all_findings = _enrich_missing_auth_with_ripper(all_findings, code)
         # Sort by line number, then severity

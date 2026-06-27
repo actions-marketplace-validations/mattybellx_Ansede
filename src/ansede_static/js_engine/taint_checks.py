@@ -101,7 +101,7 @@ def _check_taint_path_traversal(
         # ── Ambiguous callee guard ──────────────────────────────
         # `open` / `openSync` match XMLHttpRequest.open(), modals.open(),
         # window.open(), etc. — none of which are filesystem operations.
-        if short in {"open", "openSync"}:
+        if short in {"open", "openSync", "resolve", "join"}:
             if not is_fs_callee(call.callee, code=code):
                 continue
         if not callee_matches(call.callee, PATH_CALLEE_PARTS):

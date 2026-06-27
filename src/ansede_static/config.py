@@ -135,6 +135,12 @@ class AnsedeConfig:
     custom_rules_file: str = ""
     # Extra sanitizer catalog JSON files to merge with the built-in library
     extra_sanitizer_files: list[str] = field(default_factory=list)
+    # Per-project custom taint sanitizers — function names that neutralise taint
+    # for specific CWEs. Unlike the built-in SANITIZERS which fully suppress,
+    # custom sanitizers reduce confidence to 0.40 (surfaced as low-confidence
+    # findings so users can verify the implementation isn't flawed).
+    # Format: {"function_name": ["CWE-22", "CWE-78"]}
+    custom_sanitizers: dict[str, list[str]] = field(default_factory=dict)
     # Rule severity overrides — map CWE or rule_id to new severity
     # e.g. {"CWE-862": "critical", "PY-020": "low"}
     rule_overrides: dict[str, str] = field(default_factory=dict)
@@ -304,6 +310,19 @@ def temporary_analyzer_config(config: AnsedeConfig | None) -> Iterator[None]:
         except Exception as exc:
             _log.warning("Failed to load extra sanitizer file %s: %s", san_path, exc)
 
+    # Apply per-project custom sanitizers from ansede.json
+    # These reduce confidence instead of fully suppressing (unlike built-in SANITIZERS)
+    if config.custom_sanitizers:
+        for func_name, cwe_list in config.custom_sanitizers.items():
+            cwe_set = set(cwe_list)
+            prev = SANITIZERS.get(func_name)
+            if prev is None:
+                SANITIZERS[func_name] = cwe_set
+                injected_sanitizers[func_name] = None
+            else:
+                prev.update(cwe_set)
+                injected_sanitizers.setdefault(func_name, set()).update(cwe_set)
+
     try:
         yield
     finally:
@@ -370,6 +389,31 @@ def load_config(workspace_root: Path | None = None) -> AnsedeConfig:
             str(p).strip() for p in data.get("extra_sanitizer_files", []) if str(p).strip()
         ]
 
+        # Custom taint sanitizers — per-project function names that neutralise taint
+        # Format: {"function_name": ["CWE-22", "CWE-78"]}
+        custom_sanitizers: dict[str, list[str]] = {}
+        raw_custom_sanitizers = data.get("custom_sanitizers", {})
+        if isinstance(raw_custom_sanitizers, dict):
+            for func_name, cwe_list in raw_custom_sanitizers.items():
+                if isinstance(func_name, str) and func_name.strip():
+                    if isinstance(cwe_list, list):
+                        validated_cwes = [
+                            str(c).strip().upper()
+                            for c in cwe_list
+                            if isinstance(c, str) and c.strip().startswith("CWE-")
+                        ]
+                        if validated_cwes:
+                            custom_sanitizers[func_name.strip()] = validated_cwes
+                        else:
+                            warnings.append(
+                                f"ansede.json custom_sanitizers.{func_name!s} has no valid CWE entries "
+                                "(expected like ['CWE-22', 'CWE-78']) — skipping."
+                            )
+                    else:
+                        warnings.append(
+                            f"ansede.json custom_sanitizers.{func_name!s} must be a list of CWE strings — skipping."
+                        )
+
         # Rule severity overrides — map CWE or rule_id to a new severity level
         rule_overrides: dict[str, str] = {}
         raw_overrides = data.get("rule_overrides", {})
@@ -389,6 +433,7 @@ def load_config(workspace_root: Path | None = None) -> AnsedeConfig:
             v2_sources=v2_sources,
             custom_rules_file=custom_rules_file,
             extra_sanitizer_files=extra_sanitizer_files,
+            custom_sanitizers=custom_sanitizers,
             rule_overrides=rule_overrides,
             warnings=warnings,
         )

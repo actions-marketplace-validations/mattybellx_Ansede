@@ -340,6 +340,7 @@ _TEST_CWE_REASONS: dict[str, tuple[str, str]] = {
     "CWE-918": ("LIKELY_FP", "Test file — SSRF in test fixture/mock data"),
     "CWE-1321": ("LIKELY_FP", "Test file — prototype pollution in test fixture"),
     "CWE-78": ("LIKELY_FP", "Test file — command injection in test infra"),
+    "CWE-98": ("LIKELY_FP", "Test file — dynamic require in test code"),
 }
 
 

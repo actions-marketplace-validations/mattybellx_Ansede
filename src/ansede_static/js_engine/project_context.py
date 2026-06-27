@@ -201,13 +201,13 @@ def is_fs_callee(callee: str, *, code: str = "") -> bool:
     for a destructured ``fs`` import.
     """
     short = callee.rsplit(".", 1)[-1]
-    if short not in {"open", "openSync"}:
+    if short not in {"open", "openSync", "resolve", "join"}:
         return True  # Not an ambiguous callee — let other rules handle it
 
-    # Pattern 1: Dotted receiver — check if receiver is fs
+    # Pattern 1: Dotted receiver — check if receiver is fs or path module
     if "." in callee:
         receiver = callee.rsplit(".", 1)[0]
-        return receiver in {"fs", "node:fs", "fs/promises"}
+        return receiver in {"fs", "node:fs", "fs/promises", "path"}
 
     # Pattern 2: Bare call (no dot) — needs code scan for destructured import
     if not code:

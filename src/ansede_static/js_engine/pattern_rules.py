@@ -175,7 +175,7 @@ RULES: list[Rule] = [
         "Move secrets to environment variables: `process.env.API_KEY`. Use a secrets manager for production.",
         Severity.CRITICAL,
         r'(?:api[_-]?key|apikey|secret|password|token|auth_token|private[_-]?key)\s*[:=]\s*["\'][A-Za-z0-9_\-\.]{8,}["\']',
-        exclude_pattern=r'process\.env|TEST|FAKE|PLACEHOLDER|your[-_]|<YOUR',
+        exclude_pattern=r'process\.env|TEST|FAKE|PLACEHOLDER|your[-_]|<YOUR|_APIKEY\s*[:=]\s*["\']\w+["\']|_TOKEN\s*[:=]\s*["\']\w+["\']|_PASSWORD\s*[:=]\s*["\']\w+["\']|ERR_|Password\s*[:=]\s*["\']Password["\']|password\s*[:=]\s*["\']password["\']',
     ),
     Rule(
         "JS-012", "CWE-798",
@@ -239,6 +239,9 @@ RULES: list[Rule] = [
         "Validate keys, strip `__proto__` / `constructor`, and prefer safe merge patterns.",
         Severity.HIGH,
         r'__proto__|constructor\.prototype|Object\.assign\s*\([^)]*req\.\w+',
+        context_confirm=r'__proto__\s*:\s*null|===\s*.__proto__.|!==\s*.__proto__.|\.hasOwnProperty',
+        context_lines=1,
+        negate_context=True,
     ),
     Rule(
         "JS-019", "CWE-1004",
@@ -279,7 +282,7 @@ RULES: list[Rule] = [
         "`require()` called with a non-literal argument at L{line}: `{snippet}`.",
         "Use static `require('module-name')` only. Never pass user input to require().",
         Severity.HIGH,
-        r'\brequire\s*\(\s*(?!["\'`](?:\./|\.\./|[a-z])[^"\'`]*["\'`]\s*\))[^"\'`\s]',
+        r'(?<!\.)\brequire\s*\(\s*(?!["\'`](?:\./|\.\./|[a-z])[^"\'`]*["\'`]\s*\))[^"\'`\s]',
     ),
     Rule(
         "JS-057", "CWE-1333",
@@ -287,7 +290,7 @@ RULES: list[Rule] = [
         "Regex with nested quantifiers or ambiguous alternation at L{line}: `{snippet}`.",
         "Use safe regex patterns or a non-backtracking engine.",
         Severity.HIGH,
-        r'new\s+RegExp\s*\(|/(?:[^/\\]|\\.)*\((?:[^()\\/]|\\.)*(?:\+|\*|\{[\d,]+\})(?:[^()\\/]|\\.)*\)(?:\?|\+|\*|\{[\d,]+\})',
+        r'new\s+RegExp\s*\([^)]*[+*{]\s*(?:[^)]*\s*\+\s*[^)]*)?\)|/(?:[^/\\]|\\.)*\((?:[^()\\/]|\\.)*(?:\+|\*)(?:[^()\\/]|\\.)*\)(?:\+|\*)',
     ),
     Rule(
         "JS-058", "CWE-312",
@@ -556,6 +559,54 @@ RULES: list[Rule] = [
 
 
 def run_pattern_rules(code: str, *, agent: str = "js-analyzer") -> list[Finding]:
+    # ── Rust fast path for simple rules (no context_confirm/exclude) ────
+    simple_rules = [r for r in RULES if not r.context_confirm and not r.exclude_re]
+    complex_rules = [r for r in RULES if r.context_confirm or r.exclude_re]
+
+    if simple_rules:
+        try:
+            from ansede_rust_core import fast_pattern_rules as _rust_fast
+            if _rust_fast is not None:
+                import json
+                rules_json = json.dumps([
+                    {
+                        "rule_id": r.rule_id, "cwe": r.cwe,
+                        "title_tmpl": r.title_tmpl, "desc_tmpl": r.desc_tmpl,
+                        "severity": r.severity.value if hasattr(r.severity, 'value') else str(r.severity),
+                        "pattern": r.pattern.pattern if hasattr(r.pattern, 'pattern') else str(r.pattern),
+                        "context_confirm": None, "negate_context": False, "context_lines": 1,
+                    }
+                    for r in simple_rules
+                ])
+                result = _rust_fast(code, rules_json)
+                rust_findings = result.get("findings", [])
+                if rust_findings:
+                    from ansede_static._types import Finding, Severity
+                    sev_map = {"critical": Severity.CRITICAL, "high": Severity.HIGH,
+                               "medium": Severity.MEDIUM, "low": Severity.LOW, "info": Severity.INFO}
+                    findings = [
+                        Finding(
+                            category="security",
+                            severity=sev_map.get(f.get("severity", "medium"), Severity.MEDIUM),
+                            title=f.get("title", ""),
+                            description=f.get("description", ""),
+                            line=f.get("line", 0),
+                            suggestion="",
+                            rule_id=f.get("rule_id", ""),
+                            cwe=f.get("cwe", ""),
+                            agent="rust-fast-path",
+                            analysis_kind="pattern-rust",
+                        )
+                        for f in rust_findings
+                    ]
+                    # Python fallback for complex rules only
+                    for rule in complex_rules:
+                        findings.extend(rule.check(code, agent=agent))
+                    return findings
+        except Exception:
+            pass  # Fall through to Python
+
+    # ── Python-only path ────────────────────────────────────────────────
     findings: list[Finding] = []
     for rule in RULES:
         findings.extend(rule.check(code, agent=agent))

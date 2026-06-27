@@ -8,11 +8,13 @@ from __future__ import annotations
 from pathlib import Path
 
 try:
-    from ansede_rust_core._core import parse_code, parse_code_dict, parse_flat_table, supported_languages, version_info
+    from ansede_rust_core._core import parse_code, parse_code_dict, parse_flat_table, supported_languages, version_info, fast_pattern_rules
 except ImportError:
     # Fallback: native module not built yet
     parse_code = None  # type: ignore
     parse_code_dict = None  # type: ignore
+    parse_flat_table = None  # type: ignore
+    fast_pattern_rules = None  # type: ignore
     _HAS_CORE = False
     _VERSION = "0.1.0 (unbuilt)"
 else:

@@ -295,6 +295,10 @@ SANITIZERS: dict[str, set[str]] = {
     "Path.resolve":                   {"CWE-22"},
     "os.path.realpath":               {"CWE-22"},
     "os.path.abspath":                {"CWE-22"},
+    "os.path.commonpath":             {"CWE-22"},
+    "resolve_path_within_directory":  {"CWE-22"},
+    "_resolve_path_within_directory": {"CWE-22"},
+    "file_security.resolve_path_within_directory": {"CWE-22"},
     # Deserialization sanitizers
     "json.loads":                     {"CWE-502"},
     "json.load":                      {"CWE-502"},
@@ -2307,6 +2311,7 @@ def _rule_02(ctx: _Ctx) -> list[Finding]:
                 line=none_rets[0].lineno,
                 suggestion="Ensure all code paths return an explicit value, or annotate the return type.",
                 agent="python-analyzer",
+                cwe="CWE-252",
             ))
 
     return _assign_rule_ids(findings, "PY-003")
@@ -2587,6 +2592,12 @@ def _rule_03(ctx: _Ctx) -> list[Finding]:
                 if sink and sink in TAINT_SINKS:
                     if sink == "yaml.load" and _call_uses_safe_yaml_loader(node):
                         continue
+                    # ORM query guard: broad "execute" sink often catches
+                    # db.session.execute(db.select(...)) which is a safe ORM
+                    # expression, not raw SQL. Skip if the first argument
+                    # is an ast.Call (likely an ORM expression object).
+                    if sink == "execute" and node.args and isinstance(node.args[0], ast.Call):
+                        continue
                     cwe, vuln_type, configured_severity = _unpack_sink_info(TAINT_SINKS[sink])
                     default_severity = Severity.CRITICAL if "Injection" in vuln_type else Severity.HIGH
                     sev = _severity_from_name(configured_severity, default_severity)
@@ -2662,6 +2673,10 @@ def _rule_04(ctx: _Ctx) -> list[Finding]:
             continue  # skip obvious placeholder values
         if re.search(r'os\.environ|os\.getenv|getenv|environ\[', line_text, re.IGNORECASE):
             continue  # skip env-var lookups
+        if re.search(r'config\.|\.get\s*\(\s*["\']', line_text):
+            continue  # skip config lookups (not hardcoded)
+        if re.search(r'\{[^}]*\}', line_text) and re.search(r'(?:api_key|token|secret|password)\s*[:=]', line_text, re.IGNORECASE):
+            continue  # skip template/f-string interpolations (variable reference, not hardcoded)
         for pattern, secret_type in SECRET_PATTERNS:
             if re.search(pattern, line_text, re.IGNORECASE):
                 findings.append(Finding(
@@ -3818,7 +3833,7 @@ def _rule_14(ctx: _Ctx) -> list[Finding]:
                     "request","head","fetch","send"}
     _http_verbs  = {"get","post","put","patch","delete","head","request","send","fetch"}
     _HTTP_CLI_RE = re.compile(
-        r'requests?|session|client|http|aiohttp|httpx|api_?client|conn|transport|agent',
+        r'^(?:requests?|session|client|http|aiohttp|httpx|api_?client|conn|transport|agent)$',
         re.IGNORECASE,
     )
     _ssrf_sus_names = {
@@ -4415,6 +4430,7 @@ def _rule_20(ctx: _Ctx) -> list[Finding]:
                 line=fnode.lineno,
                 suggestion="Extract sub-functions for distinct logic branches or use lookup tables.",
                 agent="python-analyzer",
+                cwe="CWE-1120",
             ))
 
     return _assign_rule_ids(findings, "PY-044")
@@ -4779,20 +4795,22 @@ def _rule_24(ctx: _Ctx) -> list[Finding]:
     func_defs = ctx.func_defs
     _jwt_sign_fns = {"encode", "sign"}
     _jwt_obj_names = {"jwt", "pyjwt", "jose", "jwk"}
+
+    # ── Pre-compute module-level hardcoded vars ONCE ─────────────────
+    module_hardcoded: dict[str, tuple[str, int]] = {}
+    for node in ast.walk(ctx._tree):
+        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
+            continue
+        if isinstance(node, ast.Assign):
+            for t in node.targets:
+                if isinstance(t, ast.Name) and isinstance(node.value, ast.Constant):
+                    if isinstance(node.value.value, str) and 2 <= len(node.value.value) <= 64:
+                        module_hardcoded[t.id] = (node.value.value, node.lineno)
+
     for fname, fnode in func_defs.items():
         # Collect variables that hold short hardcoded string values
-        hardcoded_vars: dict[str, tuple[str, int]] = {}
+        hardcoded_vars: dict[str, tuple[str, int]] = dict(module_hardcoded)
         for node in ast.walk(fnode):
-            if isinstance(node, ast.Assign):
-                for t in node.targets:
-                    if isinstance(t, ast.Name) and isinstance(node.value, ast.Constant):
-                        if isinstance(node.value.value, str) and 2 <= len(node.value.value) <= 64:
-                            hardcoded_vars[t.id] = (node.value.value, node.lineno)
-
-        # Also collect module-level hardcoded vars
-        for node in ast.walk(ctx._tree):
-            if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
-                continue  # skip function bodies
             if isinstance(node, ast.Assign):
                 for t in node.targets:
                     if isinstance(t, ast.Name) and isinstance(node.value, ast.Constant):
@@ -6428,6 +6446,62 @@ def _rule_44(ctx: _Ctx) -> list[Finding]:
     return _assign_rule_ids(findings, "PY-052")
 
 
+def _rule_50(ctx: _Ctx) -> list[Finding]:
+    """CWE-942: CORS wildcard origin (flask-cors)."""
+    findings: list[Finding] = []
+    _CORS_RE = re.compile(r'CORS\s*\([^)]*origins\s*=\s*["\']\*["\']', re.IGNORECASE)
+    for lineno, line in enumerate(ctx.lines, 1):
+        if _CORS_RE.search(line):
+            findings.append(Finding(
+                category="security", severity=Severity.HIGH,
+                title=f"CWE-942: CORS wildcard origin at line {lineno}",
+                description=f"CORS configured with origins='*' at L{lineno}.",
+                line=lineno,
+                suggestion="Restrict CORS origins to specific trusted domains.",
+                cwe="CWE-942", agent="python-analyzer",
+            ))
+    return _assign_rule_ids(findings, "PY-063")
+
+
+def _rule_51(ctx: _Ctx) -> list[Finding]:
+    """CWE-94: Jinja2 SSTI via from_string with user input."""
+    findings: list[Finding] = []
+    _SSTI_RE = re.compile(
+        r'\.(?:from_string|Template)\s*\(\s*(?:request\.|args\.|form\.|params\.|input|data)',
+        re.IGNORECASE,
+    )
+    for lineno, line in enumerate(ctx.lines, 1):
+        if _SSTI_RE.search(line):
+            findings.append(Finding(
+                category="security", severity=Severity.CRITICAL,
+                title=f"CWE-94: SSTI via Jinja2 from_string with user input at line {lineno}",
+                description=f"Jinja2 template compiled from user-controlled source at L{lineno}.",
+                line=lineno,
+                suggestion="Never pass user input to Jinja2 from_string or Template. Use precompiled templates.",
+                cwe="CWE-94", agent="python-analyzer",
+            ))
+    return _assign_rule_ids(findings, "PY-064")
+
+
+def _rule_52(ctx: _Ctx) -> list[Finding]:
+    """CWE-362: TOCTOU race condition (os.path.exists then open)."""
+    findings: list[Finding] = []
+    func_defs = ctx.func_defs
+    for fname, fnode in func_defs.items():
+        code_block = ctx.lines[fnode.lineno - 1:fnode.end_lineno] if fnode.end_lineno else []
+        block_text = "\n".join(code_block)
+        if re.search(r'os\.path\.exists\s*\(', block_text) and re.search(r'(?:open|with open)\s*\(', block_text):
+            findings.append(Finding(
+                category="security", severity=Severity.MEDIUM,
+                title=f"CWE-362: TOCTOU race condition in {fname}() at line {fnode.lineno}",
+                description=f"os.path.exists() check followed by open() in `{fname}()` at L{fnode.lineno}.",
+                line=fnode.lineno,
+                suggestion="Use try/except FileNotFoundError around open() instead of pre-checking with exists().",
+                cwe="CWE-362", agent="python-analyzer",
+            ))
+    return _assign_rule_ids(findings, "PY-065")
+
+
 def _detect(code: str, filename: str = "", global_graph: object = None) -> list[Finding]:
     """Run all deterministic detection rules. Returns findings sorted by severity."""
     try:
@@ -6481,6 +6555,20 @@ def _detect(code: str, filename: str = "", global_graph: object = None) -> list[
         framework=FrameworkFingerprint.from_source(code),
     )
     findings: list[Finding] = []
+    # ── AST walk cache: pre-compute node lists per function ────
+    _walk_cache: dict[int, list] = {}
+    _orig_walk = ast.walk
+    def _cached_walk(node):
+        nid = id(node)
+        if nid in _walk_cache:
+            return iter(_walk_cache[nid])
+        result = list(_orig_walk(node))
+        _walk_cache[nid] = result
+        return iter(result)
+    ast.walk = _cached_walk
+    for fnode in func_defs.values():
+        _walk_cache[id(fnode)] = list(_orig_walk(fnode))
+
     for rule_fn in (
         _rule_01, _rule_02, _rule_03, _rule_04, _rule_05,
         _rule_06, _rule_07, _rule_08, _rule_09, _rule_10,
@@ -6492,15 +6580,21 @@ def _detect(code: str, filename: str = "", global_graph: object = None) -> list[
         _rule_36, _rule_37, _rule_38, _rule_39, _rule_40,
         _rule_41, _rule_42, _rule_43, _rule_44, _rule_45,
         _rule_46, _rule_47, _rule_48, _rule_49,
+        _rule_50, _rule_51, _rule_52,
     ):
         findings.extend(rule_fn(ctx))
 
+    # ── Restore original ast.walk ──────────────────────────────────────
+    ast.walk = _orig_walk
+
     # ── Data science ruleset ───────────────────────────────────────────────
-    try:
-        from ansede_static.rulesets.datascience import analyze_datascience
-        findings.extend(analyze_datascience(code, filename))
-    except Exception:  # pragma: no cover
-        pass
+    _HAS_DS_IMPORTS = bool(re.search(r'import\s+(?:pandas|numpy|sklearn|tensorflow|torch|keras|matplotlib|scipy|seaborn|plotly)', code))
+    if _HAS_DS_IMPORTS:
+        try:
+            from ansede_static.rulesets.datascience import analyze_datascience
+            findings.extend(analyze_datascience(code, filename))
+        except Exception:  # pragma: no cover
+            pass
 
     # ── Entropy-based secret detection ────────────────────────────────────
     try:
@@ -6512,15 +6606,20 @@ def _detect(code: str, filename: str = "", global_graph: object = None) -> list[
     except Exception:  # pragma: no cover
         pass
 
+    # ── Fast bail: skip rescore/guards/clustering if no findings ───────
+    if not findings:
+        return findings
+
     # ── Rescore confidence before guard analysis (guards get final say) ──
     findings = rescore_findings(findings)
 
     # ── Symbolic guard analysis ───────────────────────────────────────────
-    try:
-        from ansede_static.engine.symbolic_guards import analyze_guards_python
-        findings = analyze_guards_python(code, findings, filename=filename)
-    except Exception:
-        pass
+    if findings and ('if ' in code or 'assert ' in code):
+        try:
+            from ansede_static.engine.symbolic_guards import analyze_guards_python
+            findings = analyze_guards_python(code, findings, filename=filename)
+        except Exception:
+            pass
 
     # ── Deduplicate by (title.lower(), line) then cluster by CWE+region+sink ──
     # First: prefer AST-based findings over CPG findings for the same (cwe, line)

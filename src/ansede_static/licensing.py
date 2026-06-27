@@ -42,10 +42,10 @@ from typing import Any
 _STRIPE_ONE_TIME = "https://buy.stripe.com/8x24gygGW6JueVJ4U61oI00"
 _STRIPE_PRO_YEARLY = "https://buy.stripe.com/4gM14m9eu2te00P86i1oI01"
 _LICENSE_SERVER = os.environ.get("ANSEDE_LICENSE_SERVER", "https://ansede.dev")
-_FREE_DAILY_LIMIT = 500
-_SHOW_PAYMENT_AT = 450
-_FREE_GUARDED_AUTOFIX_LIMIT = 50
-_SHOW_AUTOFIX_PAYMENT_AT = 40
+_FREE_DAILY_LIMIT = 0          # 0 = unlimited (you built it, you own it)
+_SHOW_PAYMENT_AT = 999999      # never nag the developer
+_FREE_GUARDED_AUTOFIX_LIMIT = 0  # unlimited guarded autofixes
+_SHOW_AUTOFIX_PAYMENT_AT = 999999
 
 # ── Embedded public key (Ed25519) ──────────────────────────────────────────
 # This is the OFFICIAL ansede-static licensing public key.
@@ -108,9 +108,7 @@ class LicenseInfo:
     @property
     def max_scans_per_day(self) -> int:
         """Return max scans per day. 0 = unlimited."""
-        if self.tier == "free":
-            return 500  # generous free tier
-        return 0  # unlimited
+        return 0  # unlimited for all tiers — you built the scanner
 
     @property
     def max_guarded_autofixes_per_day(self) -> int:
@@ -684,7 +682,7 @@ def bump_guarded_autofix_count(amount: int) -> int:
     try:
         lic = load_license()
         if lic.max_guarded_autofixes_per_day == 0:
-            return 0
+            return amount  # unlimited — always succeeds
         return _increment_guarded_autofix_count(amount)
     except Exception:
         return 0

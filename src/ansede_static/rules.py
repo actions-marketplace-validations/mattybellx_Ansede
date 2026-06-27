@@ -818,8 +818,9 @@ _PY_RULE_CONTRACTS: dict[str, RuleContract] = {
         remediation="Catch narrower exception types or log and re-raise unexpected errors.",
         tags=("python", "exceptions", "error-handling"),
     ),
-    "PY-003": _contract(
-        rule_id="PY-003",
+    "PY-003": _apply_cwe_base(
+        "PY-003",
+        cwe="CWE-252",
         title="Inconsistent return paths causing implicit None",
         category="bug",
         default_severity="medium",
@@ -1302,8 +1303,9 @@ _PY_RULE_CONTRACTS: dict[str, RuleContract] = {
         remediation="Always set `secure=True` on authentication cookies; use `SESSION_COOKIE_SECURE=True` in Django/Flask config.",
         tags=("python", "cookies", "session", "secure-flag"),
     ),
-    "PY-044": _contract(
+    "PY-044": _apply_cwe_base(
         rule_id="PY-044",
+        cwe="CWE-1120",
         title="Cyclomatic complexity hotspot",
         category="architecture",
         default_severity="medium",

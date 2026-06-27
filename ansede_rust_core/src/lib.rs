@@ -126,6 +126,106 @@ fn flatten_node(py: Python, nodes: &[ParsedNode], parent_id: usize, depth: usize
     }
 }
 
+use once_cell::sync::Lazy;
+use regex::Regex;
+use std::collections::HashMap;
+
+// ── Fast pattern matching engine ───────────────────────────────────────────
+
+/// Compiled rule for fast line-by-line scanning.
+struct CompiledRule {
+    rule_id: String,
+    cwe: String,
+    title_tmpl: String,
+    desc_tmpl: String,
+    severity: String,
+    pattern: Regex,
+    context_confirm: Option<Regex>,
+    negate_context: bool,
+    context_lines: usize,
+}
+
+/// Run compiled regex rules against source code, returning findings as JSON.
+#[pyfunction]
+fn fast_pattern_rules(py: Python, code: &str, rules_json: &str) -> PyResult<PyObject> {
+    let rules: Vec<serde_json::Value> = serde_json::from_str(rules_json)
+        .map_err(|e| PyValueError::new_err(format!("Invalid rules JSON: {}", e)))?;
+
+    let mut compiled: Vec<CompiledRule> = Vec::new();
+    let mut skipped: usize = 0;
+    for r in &rules {
+        let pattern_str = r["pattern"].as_str().unwrap_or("");
+        let pattern = match Regex::new(pattern_str) {
+            Ok(re) => re,
+            Err(_) => { skipped += 1; continue; }
+        };
+        let context_confirm = r.get("context_confirm").and_then(|v| v.as_str()).and_then(|s| Regex::new(s).ok());
+        compiled.push(CompiledRule {
+            rule_id: r["rule_id"].as_str().unwrap_or("?").to_string(),
+            cwe: r["cwe"].as_str().unwrap_or("").to_string(),
+            title_tmpl: r["title_tmpl"].as_str().unwrap_or("").to_string(),
+            desc_tmpl: r["desc_tmpl"].as_str().unwrap_or("").to_string(),
+            severity: r["severity"].as_str().unwrap_or("medium").to_string(),
+            pattern,
+            context_confirm,
+            negate_context: r.get("negate_context").and_then(|v| v.as_bool()).unwrap_or(false),
+            context_lines: r.get("context_lines").and_then(|v| v.as_u64()).unwrap_or(1) as usize,
+        });
+    }
+
+    let comment_re = Regex::new(r"^\s*(#|//|/\*|\*|<!--)").ok();
+    let lines: Vec<&str> = code.lines().collect();
+    let mut findings: Vec<PyObject> = Vec::new();
+
+    for (lineno, line) in lines.iter().enumerate() {
+        let lineno1 = lineno + 1;
+        let stripped = line.trim();
+
+        // Skip comment lines
+        if let Some(ref cre) = comment_re {
+            if cre.is_match(stripped) { continue; }
+        }
+
+        for rule in &compiled {
+            if !rule.pattern.is_match(line) { continue; }
+
+            // Context check
+            if let Some(ref ctx_re) = rule.context_confirm {
+                let ctx_start = lineno.saturating_sub(rule.context_lines);
+                let ctx_end = (lineno + rule.context_lines + 1).min(lines.len());
+                let ctx: String = lines[ctx_start..ctx_end].join("\n");
+                let found = ctx_re.is_match(&ctx);
+                if rule.negate_context && found { continue; }
+                if !rule.negate_context && !found { continue; }
+            }
+
+            let snippet = if line.len() > 90 { &line[..90] } else { line };
+            let title = rule.title_tmpl.replace("{line}", &lineno1.to_string());
+            let desc = rule.desc_tmpl
+                .replace("{line}", &lineno1.to_string())
+                .replace("{snippet}", snippet);
+
+            let finding = PyDict::new(py);
+            finding.set_item("rule_id", &rule.rule_id)?;
+            finding.set_item("cwe", &rule.cwe)?;
+            finding.set_item("title", &title)?;
+            finding.set_item("description", &desc)?;
+            finding.set_item("line", lineno1)?;
+            finding.set_item("severity", &rule.severity)?;
+            finding.set_item("agent", "rust-fast-path")?;
+            finding.set_item("analysis_kind", "pattern-rust")?;
+
+            findings.push(finding.into());
+        }
+    }
+
+    let result = PyDict::new(py);
+    result.set_item("findings", findings)?;
+    result.set_item("lines_scanned", lines.len())?;
+    Ok(result.into())
+}
+
+
 #[pyfunction]
 fn supported_languages() -> Vec<&'static str> {
     vec!["python", "javascript", "typescript", "java", "go", "csharp"]
@@ -145,6 +245,7 @@ fn _core(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(parse_flat_table, m)?)?;
     m.add_function(wrap_pyfunction!(supported_languages, m)?)?;
     m.add_function(wrap_pyfunction!(version_info, m)?)?;
+    m.add_function(wrap_pyfunction!(fast_pattern_rules, m)?)?;
     Ok(())
 }
 mod tests {

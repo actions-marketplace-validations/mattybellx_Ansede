@@ -17,14 +17,13 @@ import re
 DOCUMENT_WRITE_CALLEES: frozenset[str] = frozenset({"document.write", "document.writeln"})
 TIMER_CALLEES: frozenset[str] = frozenset({"setTimeout", "setInterval"})
 COMMAND_EXEC_CALLEES: frozenset[str] = frozenset({
-    "exec", "execSync", "child_process.exec", "child_process.execSync",
+    "execSync", "child_process.exec", "child_process.execSync",
 })
 SHELL_TRUE_CALLEES: frozenset[str] = frozenset({
     "spawn", "execFile", "child_process.spawn", "child_process.execFile",
 })
 SQL_CALLEES: frozenset[str] = frozenset({
-    "query", "execute", "raw",
-    "db.query", "db.execute", "sequelize.query", "knex.raw",
+    "sequelize.query", "knex.raw",
 })
 SSRF_CALLEES: frozenset[str] = frozenset({
     "fetch",
