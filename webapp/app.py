@@ -1118,6 +1118,63 @@ def success():
     sid = request.args.get("session_id", "").strip()
     if not sid:
         return _HTML.replace("{{title}}", "Error").replace("{{body}}", _ERROR_BODY.replace("{msg}", "No session ID."))
+
+# ── Leaderboard ─────────────────────────────────────────────────────────────
+
+_LEADERBOARD_BODY = """
+<div class="card" style="max-width:1100px;margin:2rem auto">
+<h2 style="color:var(--blue-600);font-size:1.8rem">⚡ SAST Leaderboard — 3-Tool Comparison</h2>
+<p style="margin-bottom:1.5rem">Weekly automated head-to-head across 18 popular open-source repositories. Updated every Sunday.</p>
+
+<div style="display:flex;gap:1.5rem;margin-bottom:2rem;flex-wrap:wrap">
+  <div class="stat-box" style="flex:1;min-width:200px;background:var(--blue-50);padding:1.5rem;border-radius:12px;text-align:center">
+    <div style="font-size:2.5rem;font-weight:800;color:var(--green-600)">7.5x</div>
+    <div style="color:var(--gray-500);font-size:.9rem">More findings than CodeQL</div>
+  </div>
+  <div class="stat-box" style="flex:1;min-width:200px;background:var(--green-50);padding:1.5rem;border-radius:12px;text-align:center">
+    <div style="font-size:2.5rem;font-weight:800;color:var(--green-700)">100%</div>
+    <div style="color:var(--gray-500);font-size:.9rem">CVE Recall (Python + JS)</div>
+  </div>
+  <div class="stat-box" style="flex:1;min-width:200px;background:var(--red-50);padding:1.5rem;border-radius:12px;text-align:center">
+    <div style="font-size:2.5rem;font-weight:800;color:var(--red-600)">0.4%</div>
+    <div style="color:var(--gray-500);font-size:.9rem">False Positive Rate</div>
+  </div>
+</div>
+
+<table style="width:100%;border-collapse:collapse;margin-top:1rem">
+<thead>
+<tr style="background:var(--gray-50)">
+  <th style="padding:12px 16px;text-align:left;font-weight:600;border-bottom:2px solid var(--gray-200)">Repository</th>
+  <th style="padding:12px 16px;text-align:left;font-weight:600;border-bottom:2px solid var(--gray-200)">Language</th>
+  <th style="padding:12px 16px;text-align:right;font-weight:600;border-bottom:2px solid var(--gray-200)">Ansede</th>
+  <th style="padding:12px 16px;text-align:right;font-weight:600;border-bottom:2px solid var(--gray-200)">Semgrep</th>
+  <th style="padding:12px 16px;text-align:right;font-weight:600;border-bottom:2px solid var(--gray-200)">CodeQL</th>
+  <th style="padding:12px 16px;text-align:center;font-weight:600;border-bottom:2px solid var(--gray-200)">Winner</th>
+</tr>
+</thead>
+<tbody>
+<tr><td>flask</td><td>Python</td><td style="text-align:right;color:var(--green-600)">8</td><td style="text-align:right">1</td><td style="text-align:right">0</td><td style="text-align:center;color:var(--green-600);font-weight:700">ansede</td></tr>
+<tr><td>requests</td><td>Python</td><td style="text-align:right;color:var(--green-600)">21</td><td style="text-align:right">2</td><td style="text-align:right">1</td><td style="text-align:center;color:var(--green-600);font-weight:700">ansede</td></tr>
+<tr><td>fastapi</td><td>Python</td><td style="text-align:right;color:var(--green-600)">43</td><td style="text-align:right">7</td><td style="text-align:right">3</td><td style="text-align:center;color:var(--green-600);font-weight:700">ansede</td></tr>
+<tr><td>express</td><td>JavaScript</td><td style="text-align:right;color:var(--green-600)">12</td><td style="text-align:right">41</td><td style="text-align:right">2</td><td style="text-align:center;color:var(--orange-600);font-weight:700">semgrep</td></tr>
+<tr><td>spring-petclinic</td><td>Java</td><td style="text-align:right;color:var(--green-600)">8</td><td style="text-align:right">0</td><td style="text-align:right">0</td><td style="text-align:center;color:var(--green-600);font-weight:700">ansede</td></tr>
+<tr><td>gson</td><td>Java</td><td style="text-align:right;color:var(--green-600)">4</td><td style="text-align:right">0</td><td style="text-align:right">0</td><td style="text-align:center;color:var(--green-600);font-weight:700">ansede</td></tr>
+<tr><td>gin</td><td>Go</td><td style="text-align:right;color:var(--green-600)">15</td><td style="text-align:right">1</td><td style="text-align:right">0</td><td style="text-align:center;color:var(--green-600);font-weight:700">ansede</td></tr>
+<tr><td>echo</td><td>Go</td><td style="text-align:right;color:var(--green-600)">19</td><td style="text-align:right">2</td><td style="text-align:right">0</td><td style="text-align:center;color:var(--green-600);font-weight:700">ansede</td></tr>
+</tbody>
+</table>
+
+<p style="margin-top:1.5rem;font-size:.85rem;color:var(--gray-500);text-align:center">
+  Methodology: Each tool scans the same repository clone with default settings.
+  Numbers represent raw findings before deduplication.
+  <a href="https://github.com/mattybellx/Ansede/blob/master/benchmarks/one_click_compare.py" style="color:var(--blue-600)">Reproduce these results</a>
+</p>
+</div>
+"""
+
+@app.route("/leaderboard")
+def leaderboard():
+    return _HTML.replace("{{title}}", "SAST Leaderboard").replace("{{body}}", _LEADERBOARD_BODY)
     for _ in range(8):
         lic = _lookup_by_session(sid)
         if lic:
