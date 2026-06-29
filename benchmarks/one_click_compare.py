@@ -177,7 +177,7 @@ def run_ansede(repo_path: Path, lang: str) -> dict[str, Any]:
         if not Path(ansede_bin).exists():
             raise FileNotFoundError(f"ansede-static not found at {ansede_bin}")
         result = _run(
-            [ansede_bin, str(repo_path), "--format", "json", "--cluster"],
+            [ansede_bin, str(repo_path.resolve()), "--format", "json", "--cluster"],
             timeout=600,
         )
         data = json.loads(result.stdout) if result.stdout.strip() else {}
@@ -209,7 +209,7 @@ def run_semgrep(repo_path: Path, lang: str) -> dict[str, Any]:
     start = time.perf_counter()
     try:
         result = _run(
-            [semgrep, "scan", "--config", config, "--quiet", "--json", str(repo_path)],
+            [semgrep, "scan", "--config", config, "--quiet", "--json", str(repo_path.resolve())],
             timeout=600,
         )
         data = json.loads(result.stdout) if result.stdout.strip() else {}
@@ -405,7 +405,7 @@ def main() -> None:
     print(f"\n[+] Corpus: {len(corpus)} repos")
 
     # ── Setup cache ─────────────────────────────────────────────────────
-    cache_dir = Path(args.output) / ".cache"
+    cache_dir = Path(args.output) / ".repo_cache"
     cache_dir.mkdir(parents=True, exist_ok=True)
 
     codeql_db_cache = Path(args.output) / ".codeql_dbs"
