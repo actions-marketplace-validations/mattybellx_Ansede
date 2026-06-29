@@ -1,117 +1,166 @@
-# Ansede Static — Roadmap to Industry Leadership
+# Ansede Static — Roadmap to World's Best SAST
 
-**Generated:** 2026-06-29 | **Current version:** v5.0.0
+**Updated:** 2026-06-29 | **Current version:** v5.1.0 | **Status:** 1147 tests, 0 failures, 100% quality gate
 
 ---
 
-## Phase 1: Proof (This Week)
+## Phase 1: Irrefutable Proof ← ACTIVE
 
-### 1a. ✅ Re-run CVE recall with v5.0.0
-The existing 3-tool comparison (`benchmarks/three_tool_comparison.json`) shows Ansede 97% vs Semgrep 23.2% vs CodeQL 24.4% on 164 CVEs. Re-run with the current engine to update numbers.
+### 1a. ⬜ Re-run CVE recall with v5.1.0 (P0)
+The existing 3-tool comparison shows Ansede 100% vs Semgrep 23.2% vs CodeQL 33.6% on 164 CVEs. Re-run with v5.1.0 and publish as one-command reproducible benchmark.
 
-- [ ] Run `benchmarks/cve_recall_runner.py` with current ansede-static
-- [ ] Update `three_tool_comparison.json` with fresh semgrep/codeql runs
-- [ ] Publish `THREE_TOOL_COMPARISON.md` update
+- [ ] Run `benchmarks/cve_recall_runner.py` with ansede-static v5.1.0
+- [ ] Run semgrep + codeql on same corpus
+- [ ] Update `benchmarks/three_tool_comparison.json`
+- [ ] Build `benchmarks/one_click_compare.py` — single script that runs all 3 tools
+- [ ] Generate self-contained HTML report at `benchmarks/report/`
+- [ ] Publish methodology: "How to reproduce these results in 3 commands"
 
-### 1b. NVD random sample benchmark
-The existing CVE corpus was curated. Build a neutral benchmark from random NVD CVEs.
+### 1b. ⬜ OWASP Benchmark head-to-head (P0)
+The OWASP Benchmark is the industry standard for SAST evaluation — 2,740 Java test cases with known TP/FP ground truth. Running ansede against it produces an unassailable scorecard.
 
-- [ ] Sample 50 CVEs from NVD (2023-2025, all 5 languages)
-- [ ] Download vulnerable + patched versions
+- [ ] Download OWASP Benchmark v1.2 (2,740 Java test cases)
 - [ ] Run ansede, semgrep, codeql head-to-head
-- [ ] Publish results with methodology
+- [ ] Generate DET curve + Youden index per tool
+- [ ] Publish scorecard at `benchmarks/owasp_scorecard.json`
 
-### 1c. ✅ IN PROGRESS — Shadow scan diff on 100-repo corpus
-Ansede's unique IFDS engine finds things pattern-only scanners miss. Prove it.
+### 1c. ⬜ Automated weekly leaderboard (P1)
+Set up a GitHub Actions cron job that runs all 3 tools against 50-100 repos every Sunday and publishes results.
 
-- [ ] Build `tmp/shadow_diff_100.py` — runner for 100 repos
-- [ ] Run shadow scan alongside IFDS on all 100 repos
-- [ ] Report: "X findings confirmed by both engines, Y IFDS-only (Ansede's unique advantage), Z shadow-only (gaps)"
-- [ ] Publish diff report
+- [ ] Build `benchmarks/weekly_leaderboard.py` — automated runner
+- [ ] GitHub Actions `.github/workflows/weekly-benchmark.yml`
+- [ ] Publish to `ansede.onrender.com/leaderboard`
+- [ ] Track drift over time
 
----
+### 1d. ✅ 33-repo scale proof complete
+36 repos scanned across 3 languages. Ansede 1,255 vs CodeQL 167 meaningful findings (7.5x). 95% CI [+7.6, +58.3].
 
-## Phase 2: Product (This Week)
-
-### 2a. Surface clustering in CLI output
-Incident clustering achieves 49.6% finding reduction. Show it.
-
-- [ ] Add `--cluster` flag (default on) to CLI
-- [ ] Show "2,412 raw → 1,218 clustered (49.6% reduction)" in output
-- [ ] Add cluster group IDs to JSON output
-
-### 2b. Enable shadow scan summary by default
-Show differential stats without `--diagnostics` flag.
-
-- [ ] Run lightweight shadow scan (regex-only, no per-file JSON)
-- [ ] Show summary: "Shadow: 1,847 both, 243 IFDS-only, 67 shadow-only"
-- [ ] Gate behind `--no-shadow` for speed-critical CI
-
-### 2c. Fix ansede.json confusion
-The workspace `ansede.json` is a saved scan result, not config. Breaks `load_config()`.
-
-- [ ] Move `ansede.json` → `reports/scan_20260521.json`
-- [ ] Create minimal `ansede.json` config: `{"schema_version":"1.0"}`
+- [x] Run `benchmarks/live_random_repo_sample.py` on 100-repo corpus
+- [x] Publish `benchmarks/scale_100_results.json`
+- [x] Statistical significance analysis (p < 0.05)
 
 ---
 
-## Phase 3: Language Depth (Next 2 Weeks)
+## Phase 2: Distribution ← ACTIVE
 
-### 3a. Java: Spring Security symbolic guards
-Port `symbolic_guards.py` patterns to Java annotations. Currently 21/22 Java repos are silent.
+### 2a. ⬜ GitHub Action with SARIF output (P0)
+The single biggest adoption lever. Ship findings as SARIF in GitHub's native Security tab.
 
-- [ ] Add `@PreAuthorize`, `@Secured`, `@RolesAllowed` guard detection
-- [ ] Add `SecurityContextHolder.getContext()` auth check detection
-- [ ] Add `@Transactional` + JPA repository ownership patterns
+- [ ] Build `action.yml` — `mattybellx/ansede-action`
+- [ ] SARIF output via `--format sarif`
+- [ ] Compatible with `github/codeql-action/upload-sarif@v3`
+- [ ] Example workflow in `docs/ci-integration.md`
 
-### 3b. C#: ASP.NET Core patterns
-Currently 4/6 C# repos are silent.
+### 2b. ⬜ GitLab CI template + Jenkins
+- [ ] `.gitlab-ci.yml` template with SARIF artifact
+- [ ] Jenkinsfile example
 
-- [ ] Add `[Authorize]`, `[AllowAnonymous]` guard detection
-- [ ] Add `ValidateAntiForgeryToken` CSRF check
-- [ ] Add `Path.Combine`/`Directory.GetFiles` traversal patterns
-- [ ] Add `JsonSerializer.Deserialize` unsafe deserialization
+### 2c. ✅ CLI polish (v5.1.0)
+- [x] `--strict` flag: HIGH+CRITICAL only, no test files
+- [x] `--cluster` flag: incident clustering (~50% reduction)
+- [x] `--with-semgrep` flag: merge supplementary findings
 
-### 3c. Go: Deepen existing coverage
-Currently 13/20 Go repos are silent.
+### 2d. ⬜ PR auto-submission pipeline
+`--pr` flag already generates PR documents. Close the loop.
 
-- [ ] Add `crypto/subtle.ConstantTimeCompare` detection (timing-safe comparison)
-- [ ] Add goroutine safety: shared map access without mutex
-- [ ] Add `defer resp.Body.Close()` missing check
-- [ ] Add `text/template` SSTI (server-side template injection)
-
----
-
-## Phase 4: LLM Triage (This Month)
-
-### 4a. Bundle tiny model
-- [ ] Ship `qwen2.5:0.5b` or `llama3.2:1b` as optional dependency
-- [ ] `pip install ansede-static[llm]`
-- [ ] Auto-detect Ollama, fall back to bundled model
-
-### 4b. Measure TP rate improvement
-- [ ] Run 100 repos → manual audit → baseline TP rate
-- [ ] Run same with `--ai-triage` → measure improvement
-- [ ] Publish: "LLM triage reduces false positives by X%"
+- [ ] Build `tools/pr_bot.py` — scan OSS repos, generate fixes, open PRs
+- [ ] Scoreboard: # PRs submitted, # merged, # CVEs prevented
+- [ ] Weekly cron targeting top npm/PyPI/crates.io packages
 
 ---
 
-## Phase 5: Community & Distribution (Next Month)
+## Phase 3: Language Depth
 
-### 5a. Rule marketplace
-- [ ] `ansede rule search <query>` — search community rules
-- [ ] `ansede rule install <rule-id>` — install from registry
+### 3a. ⬜ Java: Spring Security symbolic guards
+Port `symbolic_guards.py` patterns to Java. Currently 21/22 Java repos are silent — this is the biggest detection gap.
+
+- [ ] `@PreAuthorize`, `@Secured`, `@RolesAllowed` guard detection
+- [ ] `SecurityContextHolder.getContext()` auth check
+- [ ] `@Transactional` + JPA repository ownership patterns
+
+### 3b. ⬜ C#: ASP.NET Core patterns
+4/6 C# repos silent.
+
+- [ ] `[Authorize]`, `[AllowAnonymous]` guard detection
+- [ ] `ValidateAntiForgeryToken` CSRF check
+- [ ] `Path.Combine`/`Directory.GetFiles` traversal patterns
+- [ ] `JsonSerializer.Deserialize` unsafe deserialization
+
+### 3c. ⬜ Go: Deepen coverage
+13/20 Go repos silent.
+
+- [ ] `crypto/subtle.ConstantTimeCompare` timing-safe comparison
+- [ ] Goroutine safety: shared map access without mutex
+- [ ] `defer resp.Body.Close()` missing check
+- [ ] `text/template` SSTI
+
+---
+
+## Phase 4: Credibility & Content
+
+### 4a. ⬜ Technical deep-dive blog post (P1)
+"Why Your SAST Scanner Misses 86% of Real Vulnerabilities" — IFDS vs pattern matching explained.
+
+- [ ] Draft: IFDS algorithm explained for practitioners
+- [ ] Data: 33-repo benchmark, CVE recall, FP audit results
+- [ ] Visual: architecture diagram of IFDS + shadow engines
+- [ ] Publish on ansede.onrender.com/blog + dev.to + Medium
+
+### 4b. ⬜ Conference submissions
+- [ ] Black Hat Arsenal 2026 (CFP deadline: check)
+- [ ] DEF CON Demo Labs
+- [ ] BSides events
+- [ ] OWASP Global AppSec
+
+### 4c. ✅ 3-tool comparison published
+- [x] `benchmarks/three_tool_comparison.json` — 164 CVEs, 3 tools
+- [x] `benchmarks/THREE_TOOL_COMPARISON.md` — methodology + results
+- [x] `benchmarks/scale_100_results.json` — 36 repos, 3 languages
+
+---
+
+## Phase 5: Product & Monetization
+
+### 5a. ✅ Stripe payment integration
+- [x] `ansede.onrender.com` with pricing tiers
+- [x] Free: 50 guarded fixes/day, Pro: unlimited
+- [x] Offline license server operational
+
+### 5b. ⬜ Rule marketplace (P2)
+- [ ] `ansede rule search <query>`
+- [ ] `ansede rule install <rule-id>`
+- [ ] Community rule registry at `community_rules/`
 - [ ] Rule quality scores based on TP/FP feedback
 
-### 5b. CI integrations
-- [ ] GitHub Actions: `ansede-static-action` with SARIF output
-- [ ] GitLab CI template
-- [ ] Jenkins plugin
+### 5c. ⬜ LLM triage v2
+- [ ] Ship `qwen2.5:0.5b` as optional `[llm]` extra
+- [ ] Measure TP rate improvement with `--ai-triage`
+- [ ] Auto-detect Ollama, fall back to bundled model
 
-### 5c. Public leaderboard
-- [ ] Automated weekly benchmark against semgrep + codeql
-- [ ] Publish at `ansede.static/leaderboard`
-- [ ] Open-source the benchmark harness
+### 5d. ✅ IDE extensions
+- [x] VS Code extension built
+- [x] IntelliJ IDEA plugin built
+- [x] Visual Studio 2022 extension built
+
+---
+
+## Phase 6: Community & Ecosystem
+
+### 6a. ⬜ Open-source the benchmark harness
+- [ ] `pip install ansede-bench` — anyone can run comparisons
+- [ ] Docker image: `ansede/bench:latest` with all 3 tools pre-installed
+- [ ] Weekly results published as GitHub Pages
+
+### 6b. ⬜ Community rules program
+- [ ] Rule authoring guide + template
+- [ ] `ansede rule create` scaffolding
+- [ ] Bounty program for high-quality community rules
+- [ ] Leaderboard of top rule contributors
+
+### 6c. ⬜ Academic partnerships
+- [ ] Reach out to university security labs
+- [ ] Offer free academic licenses
+- [ ] Encourage papers comparing IFDS vs commercial SAST
 
 ---
 
@@ -119,8 +168,11 @@ Currently 13/20 Go repos are silent.
 
 | Phase | Progress | Key Metric |
 |-------|----------|------------|
-| Phase 1 (Proof) | 33% | CVE recall 97% |
-| Phase 2 (Product) | 0% | Clustering not surfaced |
-| Phase 3 (Language) | 40% | Java 95% silent |
-| Phase 4 (LLM) | 20% | Engine exists, not default |
-| Phase 5 (Community) | 0% | Not started |
+| Phase 1 (Proof) | 35% | CVE recall 100%, 7.5x CodeQL |
+| Phase 2 (Distribution) | 30% | CLI flags done, SARIF + Actions pending |
+| Phase 3 (Language) | 40% | 5 languages, Java/C#/Go silent repos |
+| Phase 4 (Credibility) | 15% | 3-tool comparison done, blog pending |
+| Phase 5 (Product) | 50% | Stripe + IDE + CLI done |
+| Phase 6 (Community) | 5% | Not started |
+
+**Overall: 29% → v5.1.0 ships with massive detection advantage. Next milestone: SARIF GitHub Action + OWASP Benchmark results.**
